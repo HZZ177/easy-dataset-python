@@ -12,29 +12,28 @@ class TextChunk(BaseModel):
 
 class TextBase(BaseModel):
     title: str
-    content: str
     project_id: str
-    file_path: Optional[str] = None
-    metadata: Optional[dict] = None
+    content: Optional[str] = None
+    file_path: str
+    file_size: Optional[int] = None
+    total_chunks: Optional[int] = None
+    chunks: Optional[List[str]] = None
 
 
 class TextCreate(TextBase):
     pass
 
 
+class TextUpdate(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+
+
 class Text(TextBase):
     id: str
     created_at: datetime
     updated_at: datetime
-    chunks: List[TextChunk] = []
     status: str = "active"
 
     class Config:
         from_attributes = True
-
-
-class TextUpdate(BaseModel):
-    title: Optional[str] = None
-    content: Optional[str] = None
-    metadata: Optional[dict] = None
-    status: Optional[str] = None

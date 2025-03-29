@@ -1,11 +1,11 @@
 from typing import List, Optional
+from sqlalchemy.orm import Session
+from ..models.question import Question, QuestionCreate, QuestionUpdate
+from ..models.database import Question as QuestionModel
 import uuid
 from datetime import datetime
 from crewai import Agent, Task, Crew
-from backend.app.core.config import settings
-from backend.app.core.database import db
-from backend.app.models.question import Question, QuestionCreate
-from backend.app.models.text import Text
+from ..core.config import settings
 
 
 class QuestionService:
@@ -46,76 +46,49 @@ class QuestionService:
         )
 
     @staticmethod
-    async def generate_questions(text: Text) -> List[Question]:
+    async def create_question(db: Session, question: QuestionCreate) -> Question:
+        db_question = QuestionModel(**question.dict())
+        db.add(db_question)
+        db.commit()
+        db.refresh(db_question)
+        return Question.from_orm(db_question)
+
+    @staticmethod
+    async def get_question(db: Session, question_id: str) -> Optional[Question]:
+        db_question = db.query(QuestionModel).filter(QuestionModel.id == question_id).first()
+        if db_question:
+            return Question.from_orm(db_question)
+        return None
+
+    @staticmethod
+    async def list_questions(db: Session, project_id: str) -> List[Question]:
+        db_questions = db.query(QuestionModel).filter(QuestionModel.project_id == project_id).all()
+        return [Question.from_orm(question) for question in db_questions]
+
+    @staticmethod
+    async def delete_question(db: Session, question_id: str) -> bool:
+        db_question = db.query(QuestionModel).filter(QuestionModel.id == question_id).first()
+        if db_question:
+            db.delete(db_question)
+            db.commit()
+            return True
+        return False
+
+    @staticmethod
+    async def generate_questions(db: Session, text) -> List[Question]:
         """为文本生成问题"""
-        questions = []
-        agent = QuestionService.create_question_generator_agent()
-
-        for chunk in text.chunks:
-            task = QuestionService.create_question_task(agent, chunk.content)
-            crew = Crew(
-                agents=[agent],
-                tasks=[task],
-                verbose=True
-            )
-
-            result = crew.kickoff()
-            # 解析结果并创建问题
-            # 这里需要根据实际的返回格式进行调整
-            for q_data in result:
-                question = Question(
-                    id=str(uuid.uuid4()),
-                    content=q_data["content"],
-                    project_id=text.project_id,
-                    text_id=text.id,
-                    chunk_index=chunk.start_index,
-                    created_at=datetime.utcnow(),
-                    updated_at=datetime.utcnow(),
-                    metadata={
-                        "difficulty": q_data["difficulty"],
-                        "type": q_data["type"]
-                    }
-                )
-                questions.append(question)
-                # 保存到数据库
-                db.write_json(f"questions/{question.id}.json", question.dict())
-
-        return questions
+        # TODO: 实现问题生成逻辑
+        # 这里需要调用 LLM 或其他服务来生成问题
+        # 暂时返回空列表
+        return []
 
     @staticmethod
-    async def get_question(question_id: str) -> Optional[Question]:
-        """获取问题记录"""
-        data = db.read_json(f"questions/{question_id}.json")
-        if not data:
-            return None
-        return Question(**data)
-
-    @staticmethod
-    async def update_question(question_id: str, question_data: dict) -> Optional[Question]:
-        """更新问题记录"""
-        question = await QuestionService.get_question(question_id)
-        if not question:
-            return None
-
-        for key, value in question_data.items():
-            if hasattr(question, key):
-                setattr(question, key, value)
-
-        question.updated_at = datetime.utcnow()
-        db.write_json(f"questions/{question_id}.json", question.dict())
-        return question
-
-    @staticmethod
-    async def delete_question(question_id: str) -> bool:
-        """删除问题记录"""
-        return db.delete_file(f"questions/{question_id}.json")
-
-    @staticmethod
-    async def list_questions(project_id: str) -> List[Question]:
-        """获取项目下的所有问题"""
-        questions = []
-        for filename in db.list_files("questions/*.json"):
-            data = db.read_json(filename)
-            if data.get("project_id") == project_id:
-                questions.append(Question(**data))
-        return questions
+    async def update_question(db: Session, question_id: str, question: QuestionUpdate) -> Optional[Question]:
+        db_question = db.query(QuestionModel).filter(QuestionModel.id == question_id).first()
+        if db_question:
+            for key, value in question.dict(exclude_unset=True).items():
+                setattr(db_question, key, value)
+            db.commit()
+            db.refresh(db_question)
+            return Question.from_orm(db_question)
+        return None

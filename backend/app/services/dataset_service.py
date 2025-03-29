@@ -1,11 +1,12 @@
 from typing import List, Optional
+from sqlalchemy.orm import Session
+from ..models.dataset import Dataset, DatasetCreate
+from ..models.database import Dataset as DatasetModel, DatasetItem as DatasetItemModel
+from ..services.question_service import QuestionService
 import uuid
 from datetime import datetime
 from crewai import Agent, Task, Crew
-from backend.app.core.config import settings
-from backend.app.core.database import db
-from backend.app.models.dataset import Dataset, DatasetCreate, DatasetItem
-from backend.app.models.question import Question
+from ..core.config import settings
 
 
 class DatasetService:
@@ -46,118 +47,140 @@ class DatasetService:
         )
 
     @staticmethod
-    async def generate_dataset(dataset_data: DatasetCreate) -> Dataset:
-        """生成数据集"""
-        dataset_id = str(uuid.uuid4())
-        now = datetime.utcnow()
+    async def create_dataset(db: Session, dataset_data: DatasetCreate) -> Dataset:
+        """创建新的数据集"""
+        db_dataset = DatasetModel(
+            id=str(uuid.uuid4()),
+            name=dataset_data.name,
+            description=dataset_data.description,
+            project_id=dataset_data.project_id,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        
+        db.add(db_dataset)
+        db.commit()
+        db.refresh(db_dataset)
+        
+        return Dataset(
+            id=db_dataset.id,
+            name=db_dataset.name,
+            description=db_dataset.description,
+            project_id=db_dataset.project_id,
+            created_at=db_dataset.created_at.isoformat(),
+            updated_at=db_dataset.updated_at.isoformat(),
+            items=[]
+        )
 
-        # 获取所有问题
-        questions = []
-        for question_id in dataset_data.question_ids:
-            question_data = db.read_json(f"questions/{question_id}.json")
-            if question_data:
-                questions.append(Question(**question_data))
-
-        # 生成答案
-        agent = DatasetService.create_answer_generator_agent()
-        items = []
-
-        for question in questions:
-            task = DatasetService.create_answer_task(agent, question.content)
-            crew = Crew(
-                agents=[agent],
-                tasks=[task],
-                verbose=True
-            )
-
-            result = crew.kickoff()
-            # 解析结果并创建数据集项
-            # 这里需要根据实际的返回格式进行调整
-            item = DatasetItem(
-                question=question.content,
-                answer=result["answer"],
-                metadata={
-                    "explanation": result["explanation"],
-                    "references": result["references"],
-                    "question_id": question.id,
-                    "difficulty": question.metadata.get("difficulty"),
-                    "type": question.metadata.get("type")
-                }
-            )
-            items.append(item)
-
-        # 创建数据集
-        dataset = Dataset(
-            id=dataset_id,
-            **dataset_data.dict(),
-            created_at=now,
-            updated_at=now,
+    @staticmethod
+    async def get_dataset(db: Session, dataset_id: str) -> Optional[Dataset]:
+        """获取数据集详情"""
+        db_dataset = db.query(DatasetModel).filter(DatasetModel.id == dataset_id).first()
+        if not db_dataset:
+            return None
+            
+        # 获取数据集项
+        db_items = db.query(DatasetItemModel).filter(DatasetItemModel.dataset_id == dataset_id).all()
+        items = [
+            {
+                "question": item.question,
+                "answer": item.answer,
+                "metadata": item.item_metadata
+            }
+            for item in db_items
+        ]
+        
+        return Dataset(
+            id=db_dataset.id,
+            name=db_dataset.name,
+            description=db_dataset.description,
+            project_id=db_dataset.project_id,
+            created_at=db_dataset.created_at.isoformat(),
+            updated_at=db_dataset.updated_at.isoformat(),
             items=items
         )
 
-        # 保存到数据库
-        db.write_json(f"datasets/{dataset_id}.json", dataset.dict())
-        return dataset
-
     @staticmethod
-    async def get_dataset(dataset_id: str) -> Optional[Dataset]:
-        """获取数据集记录"""
-        data = db.read_json(f"datasets/{dataset_id}.json")
-        if not data:
-            return None
-        return Dataset(**data)
-
-    @staticmethod
-    async def update_dataset(dataset_id: str, dataset_data: dict) -> Optional[Dataset]:
-        """更新数据集记录"""
-        dataset = await DatasetService.get_dataset(dataset_id)
-        if not dataset:
-            return None
-
-        for key, value in dataset_data.items():
-            if hasattr(dataset, key):
-                setattr(dataset, key, value)
-
-        dataset.updated_at = datetime.utcnow()
-        db.write_json(f"datasets/{dataset_id}.json", dataset.dict())
-        return dataset
-
-    @staticmethod
-    async def delete_dataset(dataset_id: str) -> bool:
-        """删除数据集记录"""
-        return db.delete_file(f"datasets/{dataset_id}.json")
-
-    @staticmethod
-    async def list_datasets(project_id: str) -> List[Dataset]:
+    async def list_datasets(db: Session, project_id: str) -> List[Dataset]:
         """获取项目下的所有数据集"""
+        db_datasets = db.query(DatasetModel).filter(DatasetModel.project_id == project_id).all()
         datasets = []
-        for filename in db.list_files("datasets/*.json"):
-            data = db.read_json(filename)
-            if data.get("project_id") == project_id:
-                datasets.append(Dataset(**data))
+        
+        for db_dataset in db_datasets:
+            # 获取数据集项
+            db_items = db.query(DatasetItemModel).filter(DatasetItemModel.dataset_id == db_dataset.id).all()
+            items = [
+                {
+                    "question": item.question,
+                    "answer": item.answer,
+                    "metadata": item.item_metadata
+                }
+                for item in db_items
+            ]
+            
+            datasets.append(Dataset(
+                id=db_dataset.id,
+                name=db_dataset.name,
+                description=db_dataset.description,
+                project_id=db_dataset.project_id,
+                created_at=db_dataset.created_at.isoformat(),
+                updated_at=db_dataset.updated_at.isoformat(),
+                items=items
+            ))
+            
         return datasets
 
     @staticmethod
-    async def export_dataset(dataset_id: str, format: str = "json") -> str:
+    async def delete_dataset(db: Session, dataset_id: str) -> bool:
+        """删除数据集"""
+        db_dataset = db.query(DatasetModel).filter(DatasetModel.id == dataset_id).first()
+        if not db_dataset:
+            return False
+            
+        # 删除数据集项
+        db.query(DatasetItemModel).filter(DatasetItemModel.dataset_id == dataset_id).delete()
+        
+        # 删除数据集
+        db.delete(db_dataset)
+        db.commit()
+        return True
+
+    @staticmethod
+    async def generate_dataset(db: Session, dataset_data: DatasetCreate) -> Dataset:
+        """生成数据集"""
+        # 创建数据集
+        dataset = await DatasetService.create_dataset(db, dataset_data)
+        
+        # 获取所有问题
+        questions = await QuestionService.list_questions(db, dataset_data.project_id)
+        
+        # 创建数据集项
+        for question in questions:
+            db_item = DatasetItemModel(
+                id=str(uuid.uuid4()),
+                dataset_id=dataset.id,
+                question=question.content,
+                answer=question.answer,
+                item_metadata=question.metadata,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            db.add(db_item)
+        
+        db.commit()
+        
+        # 返回完整的数据集
+        return await DatasetService.get_dataset(db, dataset.id)
+
+    @staticmethod
+    async def export_dataset(db: Session, dataset_id: str) -> dict:
         """导出数据集"""
-        dataset = await DatasetService.get_dataset(dataset_id)
+        dataset = await DatasetService.get_dataset(db, dataset_id)
         if not dataset:
             return None
-
-        if format == "json":
-            return dataset.json(indent=2)
-        elif format == "csv":
-            # 实现CSV导出
-            import csv
-            from io import StringIO
-
-            output = StringIO()
-            writer = csv.writer(output)
-            writer.writerow(["Question", "Answer"])
-
-            for item in dataset.items:
-                writer.writerow([item.question, item.answer])
-
-            return output.getvalue()
-        else:
-            raise ValueError(f"Unsupported format: {format}")
+            
+        return {
+            "name": dataset.name,
+            "description": dataset.description,
+            "items": dataset.items
+        }

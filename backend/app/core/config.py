@@ -13,7 +13,6 @@ class Settings(BaseModel):
     # 文件存储配置
     BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
     UPLOAD_DIR: Path = BASE_DIR / "uploads"
-    PROJECTS_DIR: Path = BASE_DIR / "projects"
 
     # AI模型配置
     OPENAI_API_KEY: Optional[str] = None
@@ -27,7 +26,6 @@ class Settings(BaseModel):
         super().__init__(**kwargs)
         # 确保必要的目录存在
         self.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-        self.PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 settings = Settings()

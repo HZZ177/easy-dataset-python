@@ -2,6 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from app.api import projects, texts, questions, datasets
+from app.core.database import engine
+from app.models.database import Base
 
 app = FastAPI(title="Easy Dataset API")
 
@@ -13,6 +15,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 创建数据库表
+Base.metadata.create_all(bind=engine)
 
 # 注册路由
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])

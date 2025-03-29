@@ -1,37 +1,39 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from sqlalchemy.orm import Session
 from typing import List
-from backend.app.models.dataset import Dataset, DatasetCreate, DatasetUpdate
-from backend.app.services.dataset_service import DatasetService
+from ..models.dataset import Dataset, DatasetCreate, DatasetUpdate
+from ..services.dataset_service import DatasetService
+from ..core.database import get_db
 
 router = APIRouter()
 
 
 @router.post("/", response_model=Dataset)
-async def create_dataset(dataset: DatasetCreate):
+async def create_dataset(dataset: DatasetCreate, db: Session = Depends(get_db)):
     """创建新数据集"""
-    return await DatasetService.generate_dataset(dataset)
+    return await DatasetService.create_dataset(db, dataset)
 
 
 @router.get("/{dataset_id}", response_model=Dataset)
-async def get_dataset(dataset_id: str):
+async def get_dataset(dataset_id: str, db: Session = Depends(get_db)):
     """获取数据集详情"""
-    dataset = await DatasetService.get_dataset(dataset_id)
+    dataset = await DatasetService.get_dataset(db, dataset_id)
     if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found")
+        raise HTTPException(status_code=404, detail="数据集不存在")
     return dataset
 
 
 @router.put("/{dataset_id}", response_model=Dataset)
-async def update_dataset(dataset_id: str, dataset: DatasetUpdate):
+async def update_dataset(dataset_id: str, dataset: DatasetUpdate, db: Session = Depends(get_db)):
     """更新数据集"""
-    updated_dataset = await DatasetService.update_dataset(dataset_id, dataset.dict(exclude_unset=True))
+    updated_dataset = await DatasetService.update_dataset(db, dataset_id, dataset.dict(exclude_unset=True))
     if not updated_dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found")
+        raise HTTPException(status_code=404, detail="数据集不存在")
     return updated_dataset
 
 
 @router.delete("/{dataset_id}")
-async def delete_dataset(dataset_id: str):
+async def delete_dataset(dataset_id: str, db: Session = Depends(get_db)):
     """删除数据集"""
     if not await DatasetService.delete_dataset(dataset_id):
         raise HTTPException(status_code=404, detail="Dataset not found")
@@ -39,9 +41,9 @@ async def delete_dataset(dataset_id: str):
 
 
 @router.get("/project/{project_id}", response_model=List[Dataset])
-async def list_project_datasets(project_id: str):
+async def list_project_datasets(project_id: str, db: Session = Depends(get_db)):
     """获取项目下的所有数据集"""
-    return await DatasetService.list_datasets(project_id)
+    return await DatasetService.list_datasets(db, project_id)
 
 
 @router.get("/{dataset_id}/export")

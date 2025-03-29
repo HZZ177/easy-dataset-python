@@ -95,14 +95,7 @@ export default function ProjectNav({ currentProjectId, refreshTrigger }: Project
             startIcon={<TextIcon />}
             onClick={() => navigate(`/projects/${currentProjectId}/texts`)}
           >
-            文本处理
-          </Button>
-          <Button
-            variant={currentTab === 'questions' ? 'contained' : 'outlined'}
-            startIcon={<QuestionIcon />}
-            onClick={() => navigate(`/projects/${currentProjectId}/questions`)}
-          >
-            问题管理
+            文件列表
           </Button>
           <Button
             variant={currentTab === 'datasets' ? 'contained' : 'outlined'}
@@ -110,6 +103,13 @@ export default function ProjectNav({ currentProjectId, refreshTrigger }: Project
             onClick={() => navigate(`/projects/${currentProjectId}/datasets`)}
           >
             数据集管理
+          </Button>
+          <Button
+            variant={currentTab === 'questions' ? 'contained' : 'outlined'}
+            startIcon={<QuestionIcon />}
+            onClick={() => navigate(`/projects/${currentProjectId}/questions`)}
+          >
+            问题管理
           </Button>
           <Button
             variant={currentTab === 'settings' ? 'contained' : 'outlined'}

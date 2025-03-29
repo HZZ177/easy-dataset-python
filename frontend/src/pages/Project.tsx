@@ -21,6 +21,7 @@ import {
   ListItem,
   ListItemText,
   ListItemSecondaryAction,
+  DialogContentText,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -86,14 +87,28 @@ export default function Project() {
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [openUpload, setOpenUpload] = useState(false);
   const [openDataset, setOpenDataset] = useState(false);
+  const [openGenerateQuestions, setOpenGenerateQuestions] = useState(false);
   const [newDataset, setNewDataset] = useState({ name: '', description: '' });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [generatingQuestions, setGeneratingQuestions] = useState(false);
+  const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [saving, setSaving] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [uploadController, setUploadController] = useState<AbortController | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState<Text | null>(null);
+  const [openEdit, setOpenEdit] = useState(false);
+  const [openDelete, setOpenDelete] = useState(false);
+  const [deleteTextId, setDeleteTextId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [openDownload, setOpenDownload] = useState(false);
+  const [downloadTextId, setDownloadTextId] = useState<string | null>(null);
+  const [downloadTextTitle, setDownloadTextTitle] = useState<string | null>(null);
 
   useEffect(() => {
     fetchProjectData();
@@ -134,8 +149,13 @@ export default function Project() {
     try {
       setError(null);
       setUploading(true);
+      setUploadProgress(0);
+      const controller = new AbortController();
+      setUploadController(controller);
+      
       const formData = new FormData();
       formData.append('file', selectedFile);
+      
       const response = await axios.post(
         `/api/projects/${projectId}/upload`,
         formData,
@@ -143,17 +163,75 @@ export default function Project() {
           headers: {
             'Content-Type': 'multipart/form-data',
           },
+          signal: controller.signal,
+          onUploadProgress: (progressEvent) => {
+            if (progressEvent.total) {
+              const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+              setUploadProgress(progress);
+            }
+          },
         }
       );
-      setTexts([...texts, response.data.text]);
-      setQuestions([...questions, ...response.data.questions]);
-      setOpenUpload(false);
-      setSelectedFile(null);
+
+      if (response.data) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        await fetchProjectData();
+        setOpenUpload(false);
+      } else {
+        throw new Error('上传响应数据格式错误');
+      }
     } catch (error: any) {
-      console.error('Error uploading file:', error);
-      setError(error.response?.data?.detail || '上传文件失败');
+      if (error.name === 'AbortError') {
+        console.log('Upload cancelled');
+      } else {
+        console.error('Error uploading file:', error);
+        setError(error.response?.data?.detail || '上传文件失败');
+      }
     } finally {
       setUploading(false);
+      setUploadProgress(0);
+      setUploadController(null);
+      if (fileUrl) {
+        URL.revokeObjectURL(fileUrl);
+        setFileUrl(null);
+      }
+      setSelectedFile(null);
+    }
+  };
+
+  const handleCancelUpload = () => {
+    if (uploadController) {
+      uploadController.abort();
+    }
+    setOpenUpload(false);
+    setError(null);
+    if (fileUrl) {
+      URL.revokeObjectURL(fileUrl);
+      setFileUrl(null);
+    }
+    setSelectedFile(null);
+    setUploading(false);
+    setUploadProgress(0);
+    setUploadController(null);
+  };
+
+  const handleGenerateQuestions = async () => {
+    if (!selectedTextId) return;
+    
+    try {
+      setError(null);
+      setGeneratingQuestions(true);
+      const response = await axios.post(
+        `/api/projects/${projectId}/texts/${selectedTextId}/generate-questions`
+      );
+      setQuestions([...questions, ...response.data.questions]);
+      setOpenGenerateQuestions(false);
+      setSelectedTextId(null);
+    } catch (error: any) {
+      console.error('Error generating questions:', error);
+      setError(error.response?.data?.detail || '生成问题失败');
+    } finally {
+      setGeneratingQuestions(false);
     }
   };
 
@@ -209,6 +287,127 @@ export default function Project() {
     }
   };
 
+  const handleDeleteProject = async () => {
+    if (!projectId) return;
+    try {
+      await axios.delete(`/api/projects/${projectId}`);
+      navigate('/');
+    } catch (error: any) {
+      console.error('Error deleting project:', error);
+      setError(error.response?.data?.detail || '删除项目失败');
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (uploadController) {
+        uploadController.abort();
+      }
+      if (fileUrl) {
+        URL.revokeObjectURL(fileUrl);
+      }
+    };
+  }, [uploadController, fileUrl]);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      if (file.size > 10 * 1024 * 1024) {
+        setError('文件大小不能超过10MB');
+        return;
+      }
+      const url = URL.createObjectURL(file);
+      setFileUrl(url);
+      setSelectedFile(file);
+      setError(null);
+    }
+  };
+
+  const handleEditClick = (text: Text) => {
+    setEditingText(text);
+    setEditTitle(text.title);
+    setOpenEdit(true);
+  };
+
+  const handleEditSave = async () => {
+    if (!editingText) return;
+    try {
+      await axios.put(`/api/texts/${editingText.id}`, {
+        title: editTitle
+      });
+      // 刷新文本列表
+      const response = await axios.get(`/api/texts/project/${projectId}`);
+      setTexts(response.data);
+      setOpenEdit(false);
+      setEditingText(null);
+    } catch (error) {
+      console.error('Error updating text:', error);
+      setError('更新文件失败');
+    }
+  };
+
+  const handleDeleteClick = (textId: string) => {
+    setDeleteTextId(textId);
+    setOpenDelete(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTextId) return;
+    try {
+      await axios.delete(`/api/texts/${deleteTextId}`);
+      // 刷新文本列表
+      const response = await axios.get(`/api/texts/project/${projectId}`);
+      setTexts(response.data);
+      setOpenDelete(false);
+      setDeleteTextId(null);
+    } catch (error) {
+      console.error('Error deleting text:', error);
+      setError('删除文件失败');
+    }
+  };
+
+  const handleDownloadClick = (textId: string, title: string) => {
+    setDownloadTextId(textId);
+    setDownloadTextTitle(title);
+    setOpenDownload(true);
+  };
+
+  const handleDownloadConfirm = async () => {
+    if (!downloadTextId) return;
+    try {
+      const response = await axios.get(`/api/projects/texts/${downloadTextId}/download`, {
+        responseType: 'blob'
+      });
+      
+      // 从响应头中获取文件名
+      const contentDisposition = response.headers['content-disposition'];
+      let filename = 'download';
+      if (contentDisposition) {
+        const matches = /filename="(.+)"/.exec(contentDisposition);
+        if (matches && matches[1]) {
+          filename = decodeURIComponent(matches[1]);
+        }
+      }
+      
+      // 创建下载链接
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      
+      setOpenDownload(false);
+      setDownloadTextId(null);
+      setDownloadTextTitle(null);
+    } catch (error) {
+      console.error('Error downloading file:', error);
+      setError('下载文件失败');
+    }
+  };
+
   if (loading) {
     return <LoadingState />;
   }
@@ -232,19 +431,19 @@ export default function Project() {
             element={
               <Box>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-                  <Typography variant="h5">文本列表</Typography>
+                  <Typography variant="h5">文件列表</Typography>
                   <Button
                     variant="contained"
                     startIcon={<AddIcon />}
                     onClick={() => setOpenUpload(true)}
                   >
-                    上传文本
+                    上传文件
                   </Button>
                 </Box>
                 {texts.length === 0 ? (
                   <Paper sx={{ p: 3, textAlign: 'center' }}>
                     <Typography color="text.secondary">
-                      暂无文本，请点击上方按钮上传文本文件
+                      暂无文件，请点击上方按钮上传文件
                     </Typography>
                   </Paper>
                 ) : (
@@ -256,10 +455,37 @@ export default function Project() {
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                               <Typography variant="h6">{text.title}</Typography>
                               <Box>
-                                <IconButton size="small">
+                                <Button
+                                  variant="outlined"
+                                  size="small"
+                                  startIcon={<QuestionIcon />}
+                                  onClick={() => {
+                                    setSelectedTextId(text.id);
+                                    setOpenGenerateQuestions(true);
+                                  }}
+                                  sx={{ mr: 1 }}
+                                >
+                                  生成问题
+                                </Button>
+                                <IconButton 
+                                  size="small" 
+                                  onClick={() => handleEditClick(text)}
+                                  sx={{ mr: 1 }}
+                                >
                                   <EditIcon />
                                 </IconButton>
-                                <IconButton size="small" color="error">
+                                <IconButton 
+                                  size="small"
+                                  onClick={() => handleDownloadClick(text.id, text.title)}
+                                  sx={{ mr: 1 }}
+                                >
+                                  <DownloadIcon />
+                                </IconButton>
+                                <IconButton 
+                                  size="small" 
+                                  color="error"
+                                  onClick={() => handleDeleteClick(text.id)}
+                                >
                                   <DeleteIcon />
                                 </IconButton>
                               </Box>
@@ -308,7 +534,7 @@ export default function Project() {
                 {questions.length === 0 ? (
                   <Paper sx={{ p: 3, textAlign: 'center' }}>
                     <Typography color="text.secondary">
-                      暂无问题，请先上传文本并生成问题
+                      暂无问题，请先上传文件并生成问题
                     </Typography>
                   </Paper>
                 ) : (
@@ -472,9 +698,8 @@ export default function Project() {
                     variant="outlined"
                     color="error"
                     onClick={() => {
-                      // TODO: 实现删除项目功能
                       if (window.confirm('确定要删除此项目吗？此操作不可恢复。')) {
-                        // handleDeleteProject();
+                        handleDeleteProject();
                       }
                     }}
                   >
@@ -490,28 +715,30 @@ export default function Project() {
       <Dialog
         open={openUpload}
         onClose={() => {
-          setOpenUpload(false);
-          setError(null);
-          setSelectedFile(null);
+          if (!uploading) {
+            handleCancelUpload();
+          }
         }}
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>上传文本文件</DialogTitle>
+        <DialogTitle>上传文件</DialogTitle>
         <DialogContent>
-          {uploading && <LinearProgress sx={{ mt: 1 }} />}
+          {uploading && (
+            <Box sx={{ mt: 2 }}>
+              <LinearProgress variant="determinate" value={uploadProgress} />
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                上传进度: {uploadProgress}%
+              </Typography>
+            </Box>
+          )}
           <Box sx={{ mt: 2 }}>
             <input
               accept=".txt,.md,.json"
               style={{ display: 'none' }}
               id="raised-button-file"
               type="file"
-              onChange={(e) => {
-                if (e.target.files && e.target.files[0]) {
-                  setSelectedFile(e.target.files[0]);
-                  setError(null);
-                }
-              }}
+              onChange={handleFileSelect}
             />
             <label htmlFor="raised-button-file">
               <Button variant="outlined" component="span" fullWidth>
@@ -521,6 +748,8 @@ export default function Project() {
             {selectedFile && (
               <Typography sx={{ mt: 2 }}>
                 已选择: {selectedFile.name}
+                <br />
+                大小: {(selectedFile.size / 1024).toFixed(2)} KB
               </Typography>
             )}
             {error && (
@@ -532,11 +761,7 @@ export default function Project() {
         </DialogContent>
         <DialogActions>
           <Button
-            onClick={() => {
-              setOpenUpload(false);
-              setError(null);
-              setSelectedFile(null);
-            }}
+            onClick={handleCancelUpload}
             disabled={uploading}
           >
             取消
@@ -582,6 +807,97 @@ export default function Project() {
           <Button onClick={() => setOpenDataset(false)}>取消</Button>
           <Button onClick={handleCreateDataset} variant="contained">
             创建
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={openGenerateQuestions}
+        onClose={() => {
+          setOpenGenerateQuestions(false);
+          setSelectedTextId(null);
+          setError(null);
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>生成问题</DialogTitle>
+        <DialogContent>
+          {generatingQuestions && <LinearProgress sx={{ mt: 1 }} />}
+          {error && (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {error}
+            </Alert>
+          )}
+          <Typography sx={{ mt: 2 }}>
+            确定要为选中的文件生成问题吗？这可能需要一些时间。
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => {
+              setOpenGenerateQuestions(false);
+              setSelectedTextId(null);
+              setError(null);
+            }}
+            disabled={generatingQuestions}
+          >
+            取消
+          </Button>
+          <Button
+            onClick={handleGenerateQuestions}
+            variant="contained"
+            disabled={generatingQuestions}
+          >
+            {generatingQuestions ? '生成中...' : '生成问题'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={openEdit} onClose={() => setOpenEdit(false)}>
+        <DialogTitle>编辑文件</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="文件名称"
+            fullWidth
+            value={editTitle}
+            onChange={(e) => setEditTitle(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenEdit(false)}>取消</Button>
+          <Button onClick={handleEditSave} variant="contained">保存</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={openDelete} onClose={() => setOpenDelete(false)}>
+        <DialogTitle>删除文件</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            确定要删除这个文件吗？此操作不可撤销。
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenDelete(false)}>取消</Button>
+          <Button onClick={handleDeleteConfirm} color="error" variant="contained">
+            删除
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={openDownload} onClose={() => setOpenDownload(false)}>
+        <DialogTitle>下载文件</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            确定要下载文件 "{downloadTextTitle}" 吗？
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenDownload(false)}>取消</Button>
+          <Button onClick={handleDownloadConfirm} variant="contained" startIcon={<DownloadIcon />}>
+            下载
           </Button>
         </DialogActions>
       </Dialog>
