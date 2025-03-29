@@ -209,6 +209,17 @@ export default function Project() {
     }
   };
 
+  const handleDeleteProject = async () => {
+    if (!projectId) return;
+    try {
+      await axios.delete(`/api/projects/${projectId}`);
+      navigate('/');
+    } catch (error: any) {
+      console.error('Error deleting project:', error);
+      setError(error.response?.data?.detail || '删除项目失败');
+    }
+  };
+
   if (loading) {
     return <LoadingState />;
   }
@@ -472,9 +483,8 @@ export default function Project() {
                     variant="outlined"
                     color="error"
                     onClick={() => {
-                      // TODO: 实现删除项目功能
                       if (window.confirm('确定要删除此项目吗？此操作不可恢复。')) {
-                        // handleDeleteProject();
+                        handleDeleteProject();
                       }
                     }}
                   >
