@@ -1,0 +1,12 @@
+{
+  "id": "ddd66832-ba4a-42d0-8553-087c07e83e06",
+  "name": "测试项目",
+  "description": "test",
+  "created_at": "2025-03-27T08:01:26.612214",
+  "updated_at": "2025-03-27T08:40:13.092891",
+  "status": "active",
+  "texts": [],
+  "questions": [],
+  "datasets": [],
+  "model_config": {}
+}
