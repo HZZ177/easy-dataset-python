@@ -23,10 +23,13 @@ class Project(Base):
 class Text(Base):
     __tablename__ = "texts"
 
-    id = Column(String, primary_key=True)
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     title = Column(String, nullable=False)
-    content = Column(SQLAlchemyText, nullable=False)
-    file_path = Column(String)
+    content = Column(Text, nullable=True)
+    file_path = Column(String, nullable=False)
+    file_size = Column(Integer, nullable=True)
+    total_chunks = Column(Integer, nullable=True)
+    chunks = Column(JSON, nullable=True)
     project_id = Column(String, ForeignKey("projects.id", ondelete="CASCADE"))
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

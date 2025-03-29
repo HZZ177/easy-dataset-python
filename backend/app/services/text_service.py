@@ -3,29 +3,29 @@ import uuid
 from datetime import datetime
 from typing import List, Optional
 from sqlalchemy.orm import Session
-from app.schemas.text import Text, TextCreate, TextUpdate
-from app.models.database import Text as TextModel
-from app.core.config import settings
+from backend.app.schemas.text import Text, TextCreate, TextUpdate
+from backend.app.models.database import Text as TextModel
+from backend.app.core.config import settings
 
 
 class TextService:
     @staticmethod
-    async def save_uploaded_file(content: bytes, filename: str) -> str:
+    async def save_uploaded_file(content: bytes, original_filename: str) -> str:
         """保存上传的文件"""
         # 确保上传目录存在
-        upload_dir = os.path.join(settings.UPLOAD_DIR)
-        os.makedirs(upload_dir, exist_ok=True)
-
-        # 生成唯一的文件名
+        os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+        
+        # 生成唯一的文件名，保留原始扩展名
         file_id = str(uuid.uuid4())
-        file_extension = os.path.splitext(filename)[1]
-        new_filename = f"{file_id}{file_extension}"
-        file_path = os.path.join(upload_dir, new_filename)
-
+        file_extension = os.path.splitext(original_filename)[1]  # 获取原始文件的扩展名
+        if not file_extension:  # 如果没有扩展名，默认使用.txt
+            file_extension = ".txt"
+        file_path = os.path.join(settings.UPLOAD_DIR, f"{file_id}{file_extension}")
+        
         # 保存文件
         with open(file_path, 'wb') as f:
             f.write(content)
-
+            
         return file_path
 
     @staticmethod
@@ -89,32 +89,34 @@ class TextService:
     @staticmethod
     async def create_text(db: Session, text_data: TextCreate) -> Text:
         """创建新的文本记录"""
-        # 分割文本
-        chunks = TextService.split_text(text_data.content)
-
-        # 创建数据库记录
+        # 如果没有提供file_path，生成一个
+        if not text_data.file_path:
+            file_id = str(uuid.uuid4())
+            text_data.file_path = f"uploads/{file_id}.txt"
+        
+        # 创建新的文本记录
         db_text = TextModel(
             id=str(uuid.uuid4()),
             title=text_data.title,
-            content=text_data.content,
             project_id=text_data.project_id,
+            content=text_data.content or "",  # 确保content字段不为None
+            file_path=text_data.file_path,
+            file_size=text_data.file_size or 0,
+            total_chunks=text_data.total_chunks or 0,
+            chunks=text_data.chunks or [],
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow()
         )
+        
         db.add(db_text)
         db.commit()
         db.refresh(db_text)
-        
-        return Text.from_orm(db_text)
+        return db_text
 
     @staticmethod
-    async def get_text(db: Session, text_id: str) -> Optional[Text]:
+    async def get_text(db: Session, text_id: str) -> Optional[TextModel]:
         """获取文本记录"""
-        db_text = db.query(TextModel).filter(TextModel.id == text_id).first()
-        if not db_text:
-            return None
-            
-        return Text.from_orm(db_text)
+        return db.query(TextModel).filter(TextModel.id == text_id).first()
 
     @staticmethod
     async def list_texts(db: Session, project_id: str) -> List[Text]:
@@ -123,11 +125,20 @@ class TextService:
         return [Text.from_orm(text) for text in db_texts]
 
     @staticmethod
+    async def get_text_count(db: Session, project_id: str) -> int:
+        """获取项目下的文本数量"""
+        return db.query(TextModel).filter(TextModel.project_id == project_id).count()
+
+    @staticmethod
     async def delete_text(db: Session, text_id: str) -> bool:
         """删除文本记录"""
         db_text = db.query(TextModel).filter(TextModel.id == text_id).first()
         if not db_text:
             return False
+            
+        # 删除文件系统中的文件
+        if os.path.exists(db_text.file_path):
+            os.remove(db_text.file_path)
             
         db.delete(db_text)
         db.commit()
@@ -140,7 +151,8 @@ class TextService:
         if not db_text:
             return None
 
-        for key, value in text.dict(exclude_unset=True).items():
+        update_data = text.dict(exclude_unset=True)
+        for key, value in update_data.items():
             setattr(db_text, key, value)
         
         db_text.updated_at = datetime.utcnow()

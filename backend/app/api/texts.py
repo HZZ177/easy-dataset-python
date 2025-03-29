@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
-from backend.app.core.database import get_db
-from backend.app.schemas.text import Text, TextCreate, TextUpdate
-from backend.app.services.text_service import TextService
+from app.core.database import get_db
+from app.schemas.text import Text, TextCreate, TextUpdate
+from app.services.text_service import TextService
 
 router = APIRouter()
 
@@ -45,3 +45,10 @@ async def delete_text(text_id: str, db: Session = Depends(get_db)):
 async def list_project_texts(project_id: str, db: Session = Depends(get_db)):
     """获取项目下的所有文本"""
     return await TextService.list_texts(db, project_id)
+
+
+@router.get("/project/{project_id}/count")
+async def get_project_text_count(project_id: str, db: Session = Depends(get_db)):
+    """获取项目下的文本数量"""
+    count = await TextService.get_text_count(db, project_id)
+    return {"count": count}

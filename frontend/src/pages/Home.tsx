@@ -37,6 +37,7 @@ interface Project {
   description: string;
   created_at: string;
   updated_at: string;
+  text_count: number;
 }
 
 export default function Home() {
@@ -58,8 +59,26 @@ export default function Home() {
       const response = await axios.get('/api/projects');
       console.log('API响应:', response);
       if (Array.isArray(response.data)) {
-        console.log('项目列表:', response.data);
-        setProjects(response.data);
+        // 获取每个项目的文本数量
+        const projectsWithCount = await Promise.all(
+          response.data.map(async (project: Project) => {
+            try {
+              const countResponse = await axios.get(`/api/texts/project/${project.id}/count`);
+              return {
+                ...project,
+                text_count: countResponse.data.count || 0
+              };
+            } catch (error) {
+              console.warn(`获取项目 ${project.id} 的文本数量失败:`, error);
+              return {
+                ...project,
+                text_count: 0
+              };
+            }
+          })
+        );
+        console.log('项目列表:', projectsWithCount);
+        setProjects(projectsWithCount);
       } else {
         console.error('API返回的数据格式不正确:', response.data);
         setError('获取项目列表失败：数据格式不正确');
@@ -76,7 +95,7 @@ export default function Home() {
   const handleCreateProject = async () => {
     try {
       const response = await axios.post('/api/projects', newProject);
-      setProjects([...projects, response.data]);
+      setProjects([...projects, { ...response.data, text_count: 0 }]);
       setOpenCreate(false);
       setNewProject({ name: '', description: '' });
     } catch (error) {
@@ -177,7 +196,7 @@ export default function Home() {
                   <Chip
                     size="small"
                     icon={<DescriptionIcon />}
-                    label="0 个文本"
+                    label={`${project.text_count} 个文件`}
                     variant="outlined"
                   />
                 </Box>

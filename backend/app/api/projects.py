@@ -1,15 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response
 from sqlalchemy.orm import Session
 from typing import List
-from app.models.project import Project, ProjectCreate
-from app.models.text import Text, TextCreate
-from app.models.question import Question
-from app.models.dataset import Dataset, DatasetCreate
-from app.services.project_service import ProjectService
-from app.services.text_service import TextService
-from app.services.question_service import QuestionService
-from app.services.dataset_service import DatasetService
-from app.core.database import get_db
+from urllib.parse import quote
+from backend.app.models.project import Project, ProjectCreate
+from backend.app.models.text import Text, TextCreate
+from backend.app.models.question import Question
+from backend.app.models.dataset import Dataset, DatasetCreate
+from backend.app.services.project_service import ProjectService
+from backend.app.services.text_service import TextService
+from backend.app.services.question_service import QuestionService
+from backend.app.services.dataset_service import DatasetService
+from backend.app.core.database import get_db
+import os
 
 router = APIRouter()
 
@@ -55,13 +57,21 @@ async def upload_text(
 ):
     """上传文本文件"""
     content = await file.read()
+    content_str = content.decode()
+    
+    # 保存文件
+    file_path = await TextService.save_uploaded_file(content, file.filename)
+    
+    # 创建文本记录
     text_data = TextCreate(
         title=file.filename,
-        content=content.decode(),
-        project_id=project_id
+        project_id=project_id,
+        content=content_str,
+        file_path=file_path,
+        file_size=len(content),
     )
-    text = await TextService.create_text(db, text_data)
-    return text
+    
+    return await TextService.create_text(db, text_data)
 
 @router.post("/{project_id}/texts/{text_id}/generate-questions", response_model=List[Question])
 async def generate_questions(
@@ -111,3 +121,45 @@ async def delete_dataset(
     if not success:
         raise HTTPException(status_code=404, detail="数据集不存在")
     return {"message": "数据集已删除"}
+
+@router.get("/texts/{text_id}/download")
+async def download_text(text_id: str, db: Session = Depends(get_db)):
+    """下载文本文件"""
+    text = await TextService.get_text(db, text_id)
+    if not text:
+        raise HTTPException(status_code=404, detail="文件不存在")
+    
+    try:
+        # 读取文件内容
+        with open(text.file_path, 'rb') as f:
+            content = f.read()
+        
+        # 根据文件扩展名设置正确的 MIME 类型
+        file_extension = os.path.splitext(text.title)[1].lower()
+        mime_types = {
+            '.md': 'text/markdown',
+            '.txt': 'text/plain',
+            '.json': 'application/json',
+            '.csv': 'text/csv',
+            '.html': 'text/html',
+            '.htm': 'text/html',
+            '.xml': 'application/xml',
+            '.yaml': 'text/yaml',
+            '.yml': 'text/yaml',
+        }
+        content_type = mime_types.get(file_extension, 'text/plain')
+        
+        # 返回文件内容
+        return Response(
+            content=content,
+            media_type=content_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{quote(text.title)}"; filename*=UTF-8\'\'{quote(text.title)}',
+                "X-Content-Type-Options": "nosniff",    # 防止浏览器对文件类型进行嗅探修改
+                "Content-Type": f"{content_type}; charset=utf-8",
+                "Cache-Control": "no-cache",
+                "Pragma": "no-cache"
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"读取文件失败: {str(e)}")
