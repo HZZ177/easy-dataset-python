@@ -95,7 +95,7 @@ export default function ProjectNav({ currentProjectId, refreshTrigger }: Project
             startIcon={<TextIcon />}
             onClick={() => navigate(`/projects/${currentProjectId}/texts`)}
           >
-            文本处理
+            文件列表
           </Button>
           <Button
             variant={currentTab === 'questions' ? 'contained' : 'outlined'}
