@@ -6,6 +6,7 @@ import uuid
 
 Base = declarative_base()
 
+
 class Project(Base):
     __tablename__ = "projects"
 
@@ -19,6 +20,7 @@ class Project(Base):
     texts = relationship("Text", back_populates="project", cascade="all, delete-orphan")
     questions = relationship("Question", back_populates="project", cascade="all, delete-orphan")
     datasets = relationship("Dataset", back_populates="project", cascade="all, delete-orphan")
+
 
 class Text(Base):
     __tablename__ = "texts"
@@ -38,6 +40,7 @@ class Text(Base):
     project = relationship("Project", back_populates="texts")
     questions = relationship("Question", back_populates="text", cascade="all, delete-orphan")
 
+
 class Question(Base):
     __tablename__ = "questions"
 
@@ -55,6 +58,7 @@ class Question(Base):
     text = relationship("Text", back_populates="questions")
     dataset_items = relationship("DatasetItem", back_populates="question_ref", cascade="all, delete-orphan")
 
+
 class Dataset(Base):
     __tablename__ = "datasets"
 
@@ -68,6 +72,7 @@ class Dataset(Base):
     # 关联关系
     project = relationship("Project", back_populates="datasets")
     items = relationship("DatasetItem", back_populates="dataset", cascade="all, delete-orphan")
+
 
 class DatasetItem(Base):
     __tablename__ = "dataset_items"
@@ -83,4 +88,4 @@ class DatasetItem(Base):
 
     # 关联关系
     dataset = relationship("Dataset", back_populates="items")
-    question_ref = relationship("Question", back_populates="dataset_items") 
+    question_ref = relationship("Question", back_populates="dataset_items")

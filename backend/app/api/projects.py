@@ -15,10 +15,12 @@ import os
 
 router = APIRouter()
 
+
 @router.post("/", response_model=Project)
 async def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
     """创建新项目"""
     return await ProjectService.create_project(db, project)
+
 
 @router.get("/{project_id}", response_model=Project)
 async def get_project(project_id: str, db: Session = Depends(get_db)):
@@ -28,10 +30,12 @@ async def get_project(project_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="项目不存在")
     return project
 
+
 @router.get("/", response_model=List[Project])
 async def list_projects(db: Session = Depends(get_db)):
     """获取所有项目"""
     return await ProjectService.list_projects(db)
+
 
 @router.put("/{project_id}", response_model=Project)
 async def update_project(project_id: str, project: ProjectCreate, db: Session = Depends(get_db)):
@@ -41,6 +45,7 @@ async def update_project(project_id: str, project: ProjectCreate, db: Session = 
         raise HTTPException(status_code=404, detail="项目不存在")
     return updated_project
 
+
 @router.delete("/{project_id}")
 async def delete_project(project_id: str, db: Session = Depends(get_db)):
     """删除项目"""
@@ -49,19 +54,20 @@ async def delete_project(project_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="项目不存在")
     return {"message": "项目已删除"}
 
+
 @router.post("/{project_id}/upload", response_model=Text)
 async def upload_text(
-    project_id: str,
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+        project_id: str,
+        file: UploadFile = File(...),
+        db: Session = Depends(get_db)
 ):
     """上传文本文件"""
     content = await file.read()
     content_str = content.decode()
-    
+
     # 保存文件
     file_path = await TextService.save_uploaded_file(content, file.filename)
-    
+
     # 创建文本记录
     text_data = TextCreate(
         title=file.filename,
@@ -70,39 +76,43 @@ async def upload_text(
         file_path=file_path,
         file_size=len(content),
     )
-    
+
     return await TextService.create_text(db, text_data)
+
 
 @router.post("/{project_id}/texts/{text_id}/generate-questions", response_model=List[Question])
 async def generate_questions(
-    project_id: str,
-    text_id: str,
-    db: Session = Depends(get_db)
+        project_id: str,
+        text_id: str,
+        db: Session = Depends(get_db)
 ):
     """为文本生成问题"""
     questions = await QuestionService.generate_questions(db, text_id)
     return questions
 
+
 @router.post("/{project_id}/datasets", response_model=Dataset)
 async def create_dataset(
-    project_id: str,
-    dataset: DatasetCreate,
-    db: Session = Depends(get_db)
+        project_id: str,
+        dataset: DatasetCreate,
+        db: Session = Depends(get_db)
 ):
     """创建数据集"""
     dataset.project_id = project_id
     return await DatasetService.create_dataset(db, dataset)
+
 
 @router.get("/{project_id}/datasets", response_model=List[Dataset])
 async def list_datasets(project_id: str, db: Session = Depends(get_db)):
     """获取项目下的所有数据集"""
     return await DatasetService.list_datasets(db, project_id)
 
+
 @router.get("/{project_id}/datasets/{dataset_id}/export")
 async def export_dataset(
-    project_id: str,
-    dataset_id: str,
-    db: Session = Depends(get_db)
+        project_id: str,
+        dataset_id: str,
+        db: Session = Depends(get_db)
 ):
     """导出数据集"""
     dataset = await DatasetService.export_dataset(db, dataset_id)
@@ -110,11 +120,12 @@ async def export_dataset(
         raise HTTPException(status_code=404, detail="数据集不存在")
     return dataset
 
+
 @router.delete("/{project_id}/datasets/{dataset_id}")
 async def delete_dataset(
-    project_id: str,
-    dataset_id: str,
-    db: Session = Depends(get_db)
+        project_id: str,
+        dataset_id: str,
+        db: Session = Depends(get_db)
 ):
     """删除数据集"""
     success = await DatasetService.delete_dataset(db, dataset_id)
@@ -122,18 +133,19 @@ async def delete_dataset(
         raise HTTPException(status_code=404, detail="数据集不存在")
     return {"message": "数据集已删除"}
 
+
 @router.get("/texts/{text_id}/download")
 async def download_text(text_id: str, db: Session = Depends(get_db)):
     """下载文本文件"""
     text = await TextService.get_text(db, text_id)
     if not text:
         raise HTTPException(status_code=404, detail="文件不存在")
-    
+
     try:
         # 读取文件内容
         with open(text.file_path, 'rb') as f:
             content = f.read()
-        
+
         # 根据文件扩展名设置正确的 MIME 类型
         file_extension = os.path.splitext(text.title)[1].lower()
         mime_types = {
@@ -148,14 +160,14 @@ async def download_text(text_id: str, db: Session = Depends(get_db)):
             '.yml': 'text/yaml',
         }
         content_type = mime_types.get(file_extension, 'text/plain')
-        
+
         # 返回文件内容
         return Response(
             content=content,
             media_type=content_type,
             headers={
                 "Content-Disposition": f'attachment; filename="{quote(text.title)}"; filename*=UTF-8\'\'{quote(text.title)}',
-                "X-Content-Type-Options": "nosniff",    # 防止浏览器对文件类型进行嗅探修改
+                "X-Content-Type-Options": "nosniff",  # 防止浏览器对文件类型进行嗅探修改
                 "Content-Type": f"{content_type}; charset=utf-8",
                 "Cache-Control": "no-cache",
                 "Pragma": "no-cache"

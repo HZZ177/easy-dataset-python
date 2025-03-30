@@ -57,11 +57,11 @@ class DatasetService:
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow()
         )
-        
+
         db.add(db_dataset)
         db.commit()
         db.refresh(db_dataset)
-        
+
         return Dataset(
             id=db_dataset.id,
             name=db_dataset.name,
@@ -78,7 +78,7 @@ class DatasetService:
         db_dataset = db.query(DatasetModel).filter(DatasetModel.id == dataset_id).first()
         if not db_dataset:
             return None
-            
+
         # 获取数据集项
         db_items = db.query(DatasetItemModel).filter(DatasetItemModel.dataset_id == dataset_id).all()
         items = [
@@ -89,7 +89,7 @@ class DatasetService:
             }
             for item in db_items
         ]
-        
+
         return Dataset(
             id=db_dataset.id,
             name=db_dataset.name,
@@ -105,7 +105,7 @@ class DatasetService:
         """获取项目下的所有数据集"""
         db_datasets = db.query(DatasetModel).filter(DatasetModel.project_id == project_id).all()
         datasets = []
-        
+
         for db_dataset in db_datasets:
             # 获取数据集项
             db_items = db.query(DatasetItemModel).filter(DatasetItemModel.dataset_id == db_dataset.id).all()
@@ -117,7 +117,7 @@ class DatasetService:
                 }
                 for item in db_items
             ]
-            
+
             datasets.append(Dataset(
                 id=db_dataset.id,
                 name=db_dataset.name,
@@ -127,7 +127,7 @@ class DatasetService:
                 updated_at=db_dataset.updated_at.isoformat(),
                 items=items
             ))
-            
+
         return datasets
 
     @staticmethod
@@ -136,10 +136,10 @@ class DatasetService:
         db_dataset = db.query(DatasetModel).filter(DatasetModel.id == dataset_id).first()
         if not db_dataset:
             return False
-            
+
         # 删除数据集项
         db.query(DatasetItemModel).filter(DatasetItemModel.dataset_id == dataset_id).delete()
-        
+
         # 删除数据集
         db.delete(db_dataset)
         db.commit()
@@ -150,10 +150,10 @@ class DatasetService:
         """生成数据集"""
         # 创建数据集
         dataset = await DatasetService.create_dataset(db, dataset_data)
-        
+
         # 获取所有问题
         questions = await QuestionService.list_questions(db, dataset_data.project_id)
-        
+
         # 创建数据集项
         for question in questions:
             db_item = DatasetItemModel(
@@ -166,9 +166,9 @@ class DatasetService:
                 updated_at=datetime.utcnow()
             )
             db.add(db_item)
-        
+
         db.commit()
-        
+
         # 返回完整的数据集
         return await DatasetService.get_dataset(db, dataset.id)
 
@@ -178,7 +178,7 @@ class DatasetService:
         dataset = await DatasetService.get_dataset(db, dataset_id)
         if not dataset:
             return None
-            
+
         return {
             "name": dataset.name,
             "description": dataset.description,

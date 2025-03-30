@@ -45,4 +45,4 @@ class Dataset(DatasetBase):
     items: List[DatasetItem] = []
 
     class Config:
-        from_attributes = True 
+        from_attributes = True

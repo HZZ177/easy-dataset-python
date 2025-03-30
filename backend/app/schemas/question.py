@@ -32,4 +32,4 @@ class QuestionUpdate(BaseModel):
     answer: Optional[str] = None
     metadata: Optional[dict] = None
     status: Optional[str] = None
-    tags: Optional[List[str]] = None 
+    tags: Optional[List[str]] = None

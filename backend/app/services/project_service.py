@@ -5,6 +5,7 @@ from ..models.database import Project as ProjectModel
 import uuid
 from datetime import datetime
 
+
 class ProjectService:
     @staticmethod
     async def create_project(db: Session, project_data: ProjectCreate) -> Project:
@@ -16,11 +17,11 @@ class ProjectService:
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow()
         )
-        
+
         db.add(db_project)
         db.commit()
         db.refresh(db_project)
-        
+
         return Project(
             id=db_project.id,
             name=db_project.name,
@@ -35,7 +36,7 @@ class ProjectService:
         db_project = db.query(ProjectModel).filter(ProjectModel.id == project_id).first()
         if not db_project:
             return None
-            
+
         return Project(
             id=db_project.id,
             name=db_project.name,
@@ -46,23 +47,23 @@ class ProjectService:
 
     @staticmethod
     async def update_project(
-        db: Session,
-        project_id: str,
-        project_update: ProjectUpdate
+            db: Session,
+            project_id: str,
+            project_update: ProjectUpdate
     ) -> Optional[Project]:
         """更新项目信息"""
         db_project = db.query(ProjectModel).filter(ProjectModel.id == project_id).first()
         if not db_project:
             return None
-            
+
         update_data = project_update.dict(exclude_unset=True)
         for key, value in update_data.items():
             setattr(db_project, key, value)
-            
+
         db_project.updated_at = datetime.utcnow()
         db.commit()
         db.refresh(db_project)
-        
+
         return Project(
             id=db_project.id,
             name=db_project.name,
@@ -77,7 +78,7 @@ class ProjectService:
         db_project = db.query(ProjectModel).filter(ProjectModel.id == project_id).first()
         if not db_project:
             return False
-            
+
         db.delete(db_project)
         db.commit()
         return True
@@ -95,4 +96,4 @@ class ProjectService:
                 updated_at=project.updated_at.isoformat()
             )
             for project in db_projects
-        ] 
+        ]

@@ -14,18 +14,18 @@ class TextService:
         """保存上传的文件"""
         # 确保上传目录存在
         os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-        
+
         # 生成唯一的文件名，保留原始扩展名
         file_id = str(uuid.uuid4())
         file_extension = os.path.splitext(original_filename)[1]  # 获取原始文件的扩展名
         if not file_extension:  # 如果没有扩展名，默认使用.txt
             file_extension = ".txt"
         file_path = os.path.join(settings.UPLOAD_DIR, f"{file_id}{file_extension}")
-        
+
         # 保存文件
         with open(file_path, 'wb') as f:
             f.write(content)
-            
+
         return file_path
 
     @staticmethod
@@ -45,7 +45,7 @@ class TextService:
                 raise ValueError("文本分割次数过多，可能存在异常")
 
             end = min(start + settings.MAX_CHUNK_SIZE, len(text))
-            
+
             # 如果已经到达文本末尾
             if end == len(text):
                 chunk = {
@@ -60,14 +60,14 @@ class TextService:
             # 尝试在句子边界分割
             sentence_endings = '.。!！?？\n'
             found_boundary = False
-            
+
             # 向前查找最近的句子结束符
             for i in range(end, start, -1):
-                if text[i-1] in sentence_endings:
+                if text[i - 1] in sentence_endings:
                     end = i
                     found_boundary = True
                     break
-            
+
             # 如果没找到合适的边界，就在最大长度处分割
             if not found_boundary:
                 end = min(start + settings.MAX_CHUNK_SIZE, len(text))
@@ -79,7 +79,7 @@ class TextService:
                 "metadata": {"length": end - start}
             }
             chunks.append(chunk)
-            
+
             # 更新起始位置，考虑重叠
             start = max(end - settings.CHUNK_OVERLAP, start + 1)
             iteration_count += 1
@@ -93,7 +93,7 @@ class TextService:
         if not text_data.file_path:
             file_id = str(uuid.uuid4())
             text_data.file_path = f"uploads/{file_id}.txt"
-        
+
         # 创建新的文本记录
         db_text = TextModel(
             id=str(uuid.uuid4()),
@@ -107,7 +107,7 @@ class TextService:
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow()
         )
-        
+
         db.add(db_text)
         db.commit()
         db.refresh(db_text)
@@ -135,11 +135,11 @@ class TextService:
         db_text = db.query(TextModel).filter(TextModel.id == text_id).first()
         if not db_text:
             return False
-            
+
         # 删除文件系统中的文件
         if os.path.exists(db_text.file_path):
             os.remove(db_text.file_path)
-            
+
         db.delete(db_text)
         db.commit()
         return True
@@ -154,7 +154,7 @@ class TextService:
         update_data = text.dict(exclude_unset=True)
         for key, value in update_data.items():
             setattr(db_text, key, value)
-        
+
         db_text.updated_at = datetime.utcnow()
         db.commit()
         db.refresh(db_text)

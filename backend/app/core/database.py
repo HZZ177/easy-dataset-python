@@ -18,6 +18,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 # 创建基类
 Base = declarative_base()
 
+
 # 获取数据库会话的依赖函数
 def get_db():
     db = SessionLocal()
