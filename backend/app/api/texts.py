@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List
 from backend.app.core.database import get_db
@@ -14,8 +14,8 @@ async def create_text(text: TextCreate, db: Session = Depends(get_db)):
     return await TextService.create_text(db, text)
 
 
-@router.get("/{text_id}", response_model=Text)
-async def get_text(text_id: str, db: Session = Depends(get_db)):
+@router.get("/", response_model=Text)
+async def get_text(text_id: str = Query(..., description="文本ID"), db: Session = Depends(get_db)):
     """获取文本详情"""
     text = await TextService.get_text(db, text_id)
     if not text:
@@ -23,8 +23,12 @@ async def get_text(text_id: str, db: Session = Depends(get_db)):
     return text
 
 
-@router.post("/{text_id}/update", response_model=Text)
-async def update_text(text_id: str, text: TextUpdate, db: Session = Depends(get_db)):
+@router.post("/update", response_model=Text)
+async def update_text(
+    text_id: str = Query(..., description="文本ID"),
+    text: TextUpdate = None,
+    db: Session = Depends(get_db)
+):
     """更新文本"""
     updated_text = await TextService.update_text(db, text_id, text)
     if not updated_text:
@@ -32,8 +36,8 @@ async def update_text(text_id: str, text: TextUpdate, db: Session = Depends(get_
     return updated_text
 
 
-@router.post("/{text_id}/delete")
-async def delete_text(text_id: str, db: Session = Depends(get_db)):
+@router.post("/delete")
+async def delete_text(text_id: str = Query(..., description="文本ID"), db: Session = Depends(get_db)):
     """删除文本"""
     success = await TextService.delete_text(db, text_id)
     if not success:
@@ -41,14 +45,14 @@ async def delete_text(text_id: str, db: Session = Depends(get_db)):
     return {"message": "删除成功"}
 
 
-@router.get("/project/{project_id}", response_model=List[Text])
-async def list_project_texts(project_id: str, db: Session = Depends(get_db)):
+@router.get("/list", response_model=List[Text])
+async def list_project_texts(project_id: str = Query(..., description="项目ID"), db: Session = Depends(get_db)):
     """获取项目下的所有文本"""
     return await TextService.list_texts(db, project_id)
 
 
-@router.get("/project/{project_id}/count")
-async def get_project_text_count(project_id: str, db: Session = Depends(get_db)):
+@router.get("/count")
+async def get_project_text_count(project_id: str = Query(..., description="项目ID"), db: Session = Depends(get_db)):
     """获取项目下的文本数量"""
     count = await TextService.get_text_count(db, project_id)
     return {"count": count}

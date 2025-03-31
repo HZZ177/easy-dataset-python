@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response, Query
 from sqlalchemy.orm import Session
 from typing import List
 from urllib.parse import quote
@@ -22,8 +22,8 @@ async def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
     return await ProjectService.create_project(db, project)
 
 
-@router.get("/{project_id}", response_model=Project)
-async def get_project(project_id: str, db: Session = Depends(get_db)):
+@router.get("/detail", response_model=Project)
+async def get_project(project_id: str = Query(..., description="项目ID"), db: Session = Depends(get_db)):
     """获取项目详情"""
     project = await ProjectService.get_project(db, project_id)
     if not project:
@@ -37,8 +37,12 @@ async def list_projects(db: Session = Depends(get_db)):
     return await ProjectService.list_projects(db)
 
 
-@router.post("/{project_id}/update", response_model=Project)
-async def update_project(project_id: str, project: ProjectCreate, db: Session = Depends(get_db)):
+@router.post("/update", response_model=Project)
+async def update_project(
+    project_id: str = Query(..., description="项目ID"),
+    project: ProjectCreate = None,
+    db: Session = Depends(get_db)
+):
     """更新项目信息"""
     updated_project = await ProjectService.update_project(db, project_id, project)
     if not updated_project:
@@ -46,8 +50,8 @@ async def update_project(project_id: str, project: ProjectCreate, db: Session = 
     return updated_project
 
 
-@router.post("/{project_id}/delete")
-async def delete_project(project_id: str, db: Session = Depends(get_db)):
+@router.post("/delete")
+async def delete_project(project_id: str = Query(..., description="项目ID"), db: Session = Depends(get_db)):
     """删除项目"""
     success = await ProjectService.delete_project(db, project_id)
     if not success:
@@ -55,11 +59,11 @@ async def delete_project(project_id: str, db: Session = Depends(get_db)):
     return {"message": "项目已删除"}
 
 
-@router.post("/{project_id}/upload", response_model=Text)
+@router.post("/upload", response_model=Text)
 async def upload_text(
-        project_id: str,
-        file: UploadFile = File(...),
-        db: Session = Depends(get_db)
+    project_id: str = Query(..., description="项目ID"),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
 ):
     """上传文本文件"""
     content = await file.read()
@@ -80,39 +84,39 @@ async def upload_text(
     return await TextService.create_text(db, text_data)
 
 
-@router.post("/{project_id}/texts/{text_id}/generate-questions", response_model=List[Question])
+@router.post("/generate-questions", response_model=List[Question])
 async def generate_questions(
-        project_id: str,
-        text_id: str,
-        db: Session = Depends(get_db)
+    project_id: str = Query(..., description="项目ID"),
+    text_id: str = Query(..., description="文本ID"),
+    db: Session = Depends(get_db)
 ):
     """为文本生成问题"""
     questions = await QuestionService.generate_questions(db, text_id)
     return questions
 
 
-@router.post("/{project_id}/datasets", response_model=Dataset)
+@router.post("/datasets", response_model=Dataset)
 async def create_dataset(
-        project_id: str,
-        dataset: DatasetCreate,
-        db: Session = Depends(get_db)
+    project_id: str = Query(..., description="项目ID"),
+    dataset: DatasetCreate = None,
+    db: Session = Depends(get_db)
 ):
     """创建数据集"""
     dataset.project_id = project_id
     return await DatasetService.create_dataset(db, dataset)
 
 
-@router.get("/{project_id}/datasets", response_model=List[Dataset])
-async def list_datasets(project_id: str, db: Session = Depends(get_db)):
+@router.get("/datasets", response_model=List[Dataset])
+async def list_datasets(project_id: str = Query(..., description="项目ID"), db: Session = Depends(get_db)):
     """获取项目下的所有数据集"""
     return await DatasetService.list_datasets(db, project_id)
 
 
-@router.get("/{project_id}/datasets/{dataset_id}/export")
+@router.get("/datasets/export")
 async def export_dataset(
-        project_id: str,
-        dataset_id: str,
-        db: Session = Depends(get_db)
+    project_id: str = Query(..., description="项目ID"),
+    dataset_id: str = Query(..., description="数据集ID"),
+    db: Session = Depends(get_db)
 ):
     """导出数据集"""
     dataset = await DatasetService.export_dataset(db, dataset_id)
@@ -121,11 +125,11 @@ async def export_dataset(
     return dataset
 
 
-@router.post("/{project_id}/datasets/{dataset_id}/delete")
+@router.post("/datasets/delete")
 async def delete_dataset(
-        project_id: str,
-        dataset_id: str,
-        db: Session = Depends(get_db)
+    project_id: str = Query(..., description="项目ID"),
+    dataset_id: str = Query(..., description="数据集ID"),
+    db: Session = Depends(get_db)
 ):
     """删除数据集"""
     success = await DatasetService.delete_dataset(db, dataset_id)
@@ -134,8 +138,8 @@ async def delete_dataset(
     return {"message": "数据集已删除"}
 
 
-@router.get("/texts/{text_id}/download")
-async def download_text(text_id: str, db: Session = Depends(get_db)):
+@router.get("/texts/download")
+async def download_text(text_id: str = Query(..., description="文本ID"), db: Session = Depends(get_db)):
     """下载文本文件"""
     text = await TextService.get_text(db, text_id)
     if not text:

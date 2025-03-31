@@ -126,10 +126,10 @@ export default function Project() {
     setError(null);
     try {
       const [projectRes, textsRes, questionsRes, datasetsRes] = await Promise.all([
-        axios.get(`/api/projects/${projectId}`),
-        axios.get(`/api/texts/project/${projectId}`),
-        axios.get(`/api/questions/project/${projectId}`),
-        axios.get(`/api/datasets/project/${projectId}`),
+        axios.get(`/api/projects/detail?project_id=${projectId}`),
+        axios.get(`/api/texts/list?project_id=${projectId}`),
+        axios.get(`/api/questions/list?project_id=${projectId}`),
+        axios.get(`/api/datasets/list?project_id=${projectId}`),
       ]);
       setProject(projectRes.data);
       setTexts(textsRes.data);
@@ -157,7 +157,7 @@ export default function Project() {
       formData.append('file', selectedFile);
       
       const response = await axios.post(
-        `/api/projects/${projectId}/upload`,
+        `/api/projects/upload?project_id=${projectId}`,
         formData,
         {
           headers: {
@@ -222,7 +222,7 @@ export default function Project() {
       setError(null);
       setGeneratingQuestions(true);
       const response = await axios.post(
-        `/api/projects/${projectId}/texts/${selectedTextId}/generate-questions`
+        `/api/projects/generate-questions?project_id=${projectId}&text_id=${selectedTextId}`
       );
       setQuestions([...questions, ...response.data.questions]);
       setOpenGenerateQuestions(false);
@@ -252,7 +252,7 @@ export default function Project() {
 
   const handleExportDataset = async (dataset: Dataset) => {
     try {
-      const response = await axios.get(`/api/datasets/${dataset.id}/export`, {
+      const response = await axios.get(`/api/datasets/export?dataset_id=${dataset.id}&format=json`, {
         responseType: 'blob',
       });
       const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -272,7 +272,7 @@ export default function Project() {
     
     try {
       setSaving(true);
-      const response = await axios.post(`/api/projects/${projectId}/update`, {
+      const response = await axios.post(`/api/projects/update?project_id=${projectId}`, {
         name: editingProject.name,
         description: editingProject.description,
       });
@@ -290,7 +290,7 @@ export default function Project() {
   const handleDeleteProject = async () => {
     if (!projectId) return;
     try {
-      await axios.post(`/api/projects/${projectId}/delete`);
+      await axios.post(`/api/projects/delete?project_id=${projectId}`);
       navigate('/');
     } catch (error: any) {
       console.error('Error deleting project:', error);
@@ -332,11 +332,11 @@ export default function Project() {
   const handleEditSave = async () => {
     if (!editingText) return;
     try {
-      await axios.post(`/api/texts/${editingText.id}/update`, {
+      await axios.post(`/api/texts/update?text_id=${editingText.id}`, {
         title: editTitle
       });
       // 刷新文本列表
-      const response = await axios.get(`/api/texts/project/${projectId}`);
+      const response = await axios.get(`/api/texts/list?project_id=${projectId}`);
       setTexts(response.data);
       setOpenEdit(false);
       setEditingText(null);
@@ -354,9 +354,9 @@ export default function Project() {
   const handleDeleteConfirm = async () => {
     if (!deleteTextId) return;
     try {
-      await axios.post(`/api/texts/${deleteTextId}/delete`);
+      await axios.post(`/api/texts/delete?text_id=${deleteTextId}`);
       // 刷新文本列表
-      const response = await axios.get(`/api/texts/project/${projectId}`);
+      const response = await axios.get(`/api/texts/list?project_id=${projectId}`);
       setTexts(response.data);
       setOpenDelete(false);
       setDeleteTextId(null);
@@ -375,7 +375,7 @@ export default function Project() {
   const handleDownloadConfirm = async () => {
     if (!downloadTextId) return;
     try {
-      const response = await axios.get(`/api/projects/texts/${downloadTextId}/download`, {
+      const response = await axios.get(`/api/projects/texts/download?text_id=${downloadTextId}`, {
         responseType: 'blob'
       });
       

@@ -63,7 +63,7 @@ export default function Home() {
         const projectsWithCount = await Promise.all(
           response.data.map(async (project: Project) => {
             try {
-              const countResponse = await axios.get(`/api/texts/project/${project.id}/count`);
+              const countResponse = await axios.get(`/api/texts/count?project_id=${project.id}`);
               return {
                 ...project,
                 text_count: countResponse.data.count || 0
@@ -106,7 +106,7 @@ export default function Home() {
 
   const handleDeleteProject = async (project: Project) => {
     try {
-      await axios.post(`/api/projects/${project.id}/delete`);
+      await axios.post(`/api/projects/delete?project_id=${project.id}`);
       setProjects(projects.filter(p => p.id !== project.id));
       setAnchorEl(null);
     } catch (error) {
