@@ -272,7 +272,7 @@ export default function Project() {
     
     try {
       setSaving(true);
-      const response = await axios.put(`/api/projects/${projectId}`, {
+      const response = await axios.post(`/api/projects/${projectId}/update`, {
         name: editingProject.name,
         description: editingProject.description,
       });
@@ -290,7 +290,7 @@ export default function Project() {
   const handleDeleteProject = async () => {
     if (!projectId) return;
     try {
-      await axios.delete(`/api/projects/${projectId}`);
+      await axios.post(`/api/projects/${projectId}/delete`);
       navigate('/');
     } catch (error: any) {
       console.error('Error deleting project:', error);
@@ -332,7 +332,7 @@ export default function Project() {
   const handleEditSave = async () => {
     if (!editingText) return;
     try {
-      await axios.put(`/api/texts/${editingText.id}`, {
+      await axios.post(`/api/texts/${editingText.id}/update`, {
         title: editTitle
       });
       // 刷新文本列表
@@ -354,7 +354,7 @@ export default function Project() {
   const handleDeleteConfirm = async () => {
     if (!deleteTextId) return;
     try {
-      await axios.delete(`/api/texts/${deleteTextId}`);
+      await axios.post(`/api/texts/${deleteTextId}/delete`);
       // 刷新文本列表
       const response = await axios.get(`/api/texts/project/${projectId}`);
       setTexts(response.data);

@@ -37,7 +37,7 @@ async def list_projects(db: Session = Depends(get_db)):
     return await ProjectService.list_projects(db)
 
 
-@router.put("/{project_id}", response_model=Project)
+@router.post("/{project_id}/update", response_model=Project)
 async def update_project(project_id: str, project: ProjectCreate, db: Session = Depends(get_db)):
     """更新项目信息"""
     updated_project = await ProjectService.update_project(db, project_id, project)
@@ -46,7 +46,7 @@ async def update_project(project_id: str, project: ProjectCreate, db: Session = 
     return updated_project
 
 
-@router.delete("/{project_id}")
+@router.post("/{project_id}/delete")
 async def delete_project(project_id: str, db: Session = Depends(get_db)):
     """删除项目"""
     success = await ProjectService.delete_project(db, project_id)
@@ -121,7 +121,7 @@ async def export_dataset(
     return dataset
 
 
-@router.delete("/{project_id}/datasets/{dataset_id}")
+@router.post("/{project_id}/datasets/{dataset_id}/delete")
 async def delete_dataset(
         project_id: str,
         dataset_id: str,

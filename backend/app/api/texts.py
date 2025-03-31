@@ -23,7 +23,7 @@ async def get_text(text_id: str, db: Session = Depends(get_db)):
     return text
 
 
-@router.put("/{text_id}", response_model=Text)
+@router.post("/{text_id}/update", response_model=Text)
 async def update_text(text_id: str, text: TextUpdate, db: Session = Depends(get_db)):
     """更新文本"""
     updated_text = await TextService.update_text(db, text_id, text)
@@ -32,7 +32,7 @@ async def update_text(text_id: str, text: TextUpdate, db: Session = Depends(get_
     return updated_text
 
 
-@router.delete("/{text_id}")
+@router.post("/{text_id}/delete")
 async def delete_text(text_id: str, db: Session = Depends(get_db)):
     """删除文本"""
     success = await TextService.delete_text(db, text_id)

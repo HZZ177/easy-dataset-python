@@ -23,7 +23,7 @@ async def get_dataset(dataset_id: str, db: Session = Depends(get_db)):
     return dataset
 
 
-@router.put("/{dataset_id}", response_model=Dataset)
+@router.post("/{dataset_id}/update", response_model=Dataset)
 async def update_dataset(dataset_id: str, dataset: DatasetUpdate, db: Session = Depends(get_db)):
     """更新数据集"""
     updated_dataset = await DatasetService.update_dataset(db, dataset_id, dataset.dict(exclude_unset=True))
@@ -32,7 +32,7 @@ async def update_dataset(dataset_id: str, dataset: DatasetUpdate, db: Session = 
     return updated_dataset
 
 
-@router.delete("/{dataset_id}")
+@router.post("/{dataset_id}/delete")
 async def delete_dataset(dataset_id: str, db: Session = Depends(get_db)):
     """删除数据集"""
     if not await DatasetService.delete_dataset(dataset_id):
