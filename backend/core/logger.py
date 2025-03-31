@@ -2,7 +2,7 @@ import sys
 import threading
 from datetime import datetime
 from loguru import logger
-from file_path import log_path
+from .file_path import log_path
 
 current_date = datetime.now().strftime("%Y-%m-%d")
 current_hour = datetime.now().strftime("%H")

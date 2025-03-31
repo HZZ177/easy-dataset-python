@@ -4,6 +4,7 @@ import uvicorn
 from app.api import projects, texts, questions, datasets
 from app.core.database import engine
 from app.models.database import Base
+from backend.core.logger import logger
 
 app = FastAPI(title="Easy Dataset API")
 
@@ -28,8 +29,16 @@ app.include_router(datasets.router, prefix="/api/datasets", tags=["datasets"])
 
 @app.get("/")
 async def root():
+    logger.info("项目根路径被访问")
     return {"message": "Welcome to Easy Dataset API"}
 
 
 if __name__ == "__main__":
-    uvicorn.run(app="main:app", host="0.0.0.0", port=1897, reload=True)
+    uvicorn.run(
+        app="main:app",
+        host="0.0.0.0",
+        port=1897,
+        reload=True,
+        # log_level="error",
+        access_log=False  # 禁用访问日志
+    )
