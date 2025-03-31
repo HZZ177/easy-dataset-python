@@ -106,7 +106,7 @@ export default function Home() {
 
   const handleDeleteProject = async (project: Project) => {
     try {
-      await axios.delete(`/api/projects/${project.id}`);
+      await axios.post(`/api/projects/${project.id}/delete`);
       setProjects(projects.filter(p => p.id !== project.id));
       setAnchorEl(null);
     } catch (error) {
