@@ -40,5 +40,5 @@ if __name__ == "__main__":
         port=1897,
         reload=True,
         # log_level="error",
-        access_log=False  # 禁用访问日志
+        # access_log=False  # 禁用访问日志
     )

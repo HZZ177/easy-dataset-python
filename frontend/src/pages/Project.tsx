@@ -36,6 +36,7 @@ import axios from 'axios';
 import LoadingState from '../components/LoadingState';
 import ErrorState from '../components/ErrorState';
 import ProjectNav from '../components/ProjectNav';
+import DatasetCard from '../components/DatasetCard';
 
 interface Project {
   id: string;
@@ -51,6 +52,12 @@ interface Text {
   content: string;
   created_at: string;
   updated_at: string;
+  chunks?: Array<{
+    content: string;
+    start_index: number;
+    end_index: number;
+    metadata?: Record<string, any>;
+  }>;
 }
 
 interface Question {
@@ -78,6 +85,83 @@ interface Dataset {
   }>;
 }
 
+interface TextFile {
+  id: string;
+  name: string;
+  size: number;
+  chunks: Array<{
+    content: string;
+    start_index: number;
+    end_index: number;
+    metadata?: Record<string, any>;
+  }>;
+}
+
+interface ProjectState {
+  selectedFile: TextFile | null;
+  selectedChunkIndex: number | null;
+  selectedChunkContent: string;
+  datasets: Dataset[];
+  loading: boolean;
+}
+
+const styles = {
+  projectContainer: {
+    display: 'flex',
+    gap: '20px',
+    padding: '20px',
+    height: '100%'
+  },
+  fileList: {
+    flex: '0 0 300px',
+    overflowY: 'auto',
+    borderRight: '1px solid #e0e0e0',
+    paddingRight: '20px'
+  },
+  chunkList: {
+    flex: '0 0 250px',
+    overflowY: 'auto',
+    borderRight: '1px solid #e0e0e0',
+    paddingRight: '20px'
+  },
+  chunkItem: {
+    padding: '10px',
+    marginBottom: '10px',
+    border: '1px solid #e0e0e0',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    '&:hover': {
+      backgroundColor: '#f5f5f5'
+    },
+    '&.selected': {
+      backgroundColor: '#e3f2fd',
+      borderColor: '#2196f3'
+    }
+  },
+  chunkSize: {
+    color: '#666',
+    fontSize: '0.9em'
+  },
+  datasetContent: {
+    flex: 1,
+    overflowY: 'auto'
+  },
+  datasetHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '20px'
+  },
+  datasetList: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+    gap: '20px'
+  }
+};
+
 export default function Project() {
   const { projectId } = useParams<{ projectId: string }>();
   const location = useLocation();
@@ -85,14 +169,18 @@ export default function Project() {
   const [project, setProject] = useState<Project | null>(null);
   const [texts, setTexts] = useState<Text[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
-  const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [openUpload, setOpenUpload] = useState(false);
   const [openDataset, setOpenDataset] = useState(false);
   const [openGenerateQuestions, setOpenGenerateQuestions] = useState(false);
+  const [openGenerateDataset, setOpenGenerateDataset] = useState(false);
   const [newDataset, setNewDataset] = useState({ name: '', description: '' });
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [generatingQuestions, setGeneratingQuestions] = useState(false);
+  const [state, setState] = useState<ProjectState>({
+    selectedFile: null,
+    selectedChunkIndex: null,
+    selectedChunkContent: '',
+    datasets: [],
+    loading: false
+  });
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -110,6 +198,7 @@ export default function Project() {
   const [openDownload, setOpenDownload] = useState(false);
   const [downloadTextId, setDownloadTextId] = useState<string | null>(null);
   const [downloadTextTitle, setDownloadTextTitle] = useState<string | null>(null);
+  const [openViewContent, setOpenViewContent] = useState(false);
 
   // 获取当前 tab
   const currentTab = location.pathname.split('/').pop() || 'texts';
@@ -162,7 +251,10 @@ export default function Project() {
     setLoading(true);
     try {
       const response = await axios.get(`/api/datasets/list?project_id=${projectId}`);
-      setDatasets(response.data);
+      setState(prev => ({
+        ...prev,
+        datasets: response.data
+      }));
     } catch (error) {
       console.error('Error fetching datasets:', error);
       setError('加载数据集列表失败');
@@ -203,58 +295,47 @@ export default function Project() {
   }, [project]);
 
   const handleUpload = async () => {
-    if (!selectedFile || !projectId) return;
+    if (!projectId) return;
     
     try {
       setError(null);
-      setUploading(true);
+      setState(prev => ({ ...prev, loading: true }));
       setUploadProgress(0);
       const controller = new AbortController();
       setUploadController(controller);
       
       const formData = new FormData();
-      formData.append('file', selectedFile);
+      const fileInput = document.getElementById('raised-button-file') as HTMLInputElement;
+      if (!fileInput.files || !fileInput.files[0]) {
+        setError('请选择文件');
+        return;
+      }
+      formData.append('file', fileInput.files[0]);
       
       const response = await axios.post(
         `/api/projects/upload?project_id=${projectId}`,
         formData,
         {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-          signal: controller.signal,
           onUploadProgress: (progressEvent) => {
-            if (progressEvent.total) {
-              const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-              setUploadProgress(progress);
-            }
+            const progress = (progressEvent.loaded / progressEvent.total!) * 100;
+            setUploadProgress(progress);
           },
+          signal: controller.signal
         }
       );
 
-      if (response.data) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        await fetchTexts(); // 只重新加载文本列表
-        setOpenUpload(false);
-      } else {
-        throw new Error('上传响应数据格式错误');
-      }
+      // 刷新文件列表
+      await fetchTexts();
+      
+      setOpenUpload(false);
+      setFileUrl(null);
     } catch (error: any) {
-      if (error.name === 'AbortError') {
-        console.log('Upload cancelled');
-      } else {
-        console.error('Error uploading file:', error);
-        setError(error.response?.data?.detail || '上传文件失败');
-      }
+      console.error('Error uploading file:', error);
+      setError(error.response?.data?.detail || '上传失败');
     } finally {
-      setUploading(false);
+      setState(prev => ({ ...prev, loading: false }));
       setUploadProgress(0);
       setUploadController(null);
-      if (fileUrl) {
-        URL.revokeObjectURL(fileUrl);
-        setFileUrl(null);
-      }
-      setSelectedFile(null);
     }
   };
 
@@ -262,35 +343,107 @@ export default function Project() {
     if (uploadController) {
       uploadController.abort();
     }
-    setOpenUpload(false);
-    setError(null);
-    if (fileUrl) {
-      URL.revokeObjectURL(fileUrl);
-      setFileUrl(null);
-    }
-    setSelectedFile(null);
-    setUploading(false);
+    setFileUrl(null);
+    setState(prev => ({ ...prev, selectedFile: null }));
     setUploadProgress(0);
     setUploadController(null);
+    setOpenUpload(false);
+    // 重置文件输入框
+    const fileInput = document.getElementById('raised-button-file') as HTMLInputElement;
+    if (fileInput) {
+      fileInput.value = '';
+    }
   };
 
-  const handleGenerateQuestions = async () => {
-    if (!selectedTextId) return;
-    
+  const handleFileSelect = async (text: Text) => {
     try {
-      setError(null);
-      setGeneratingQuestions(true);
-      const response = await axios.post(
-        `/api/projects/generate-questions?project_id=${projectId}&text_id=${selectedTextId}`
-      );
-      setQuestions([...questions, ...response.data.questions]);
-      setOpenGenerateQuestions(false);
-      setSelectedTextId(null);
-    } catch (error: any) {
-      console.error('Error generating questions:', error);
-      setError(error.response?.data?.detail || '生成问题失败');
+      setState(prev => ({ ...prev, loading: true }));
+      // 获取文件的分块数据
+      const response = await axios.get(`/api/texts/chunks?text_id=${text.id}`);
+      const chunks = response.data;
+      
+      const textFile: TextFile = {
+        id: text.id,
+        name: text.title,
+        size: text.content.length,
+        chunks: chunks
+      };
+      
+      setState(prev => ({
+        ...prev,
+        selectedFile: textFile,
+        selectedChunkIndex: null,
+        datasets: []
+      }));
+    } catch (error) {
+      console.error('Error fetching chunks:', error);
+      setError('获取分块数据失败');
     } finally {
-      setGeneratingQuestions(false);
+      setState(prev => ({ ...prev, loading: false }));
+    }
+  };
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      if (file.size > 10 * 1024 * 1024) {
+        setError('文件大小不能超过10MB');
+        return;
+      }
+      const url = URL.createObjectURL(file);
+      setFileUrl(url);
+      setError(null);
+    }
+  };
+
+  const handleChunkSelect = async (chunkIndex: number) => {
+    setState(prev => ({
+      ...prev,
+      selectedChunkIndex: chunkIndex,
+      loading: true
+    }));
+
+    try {
+      const response = await axios.get(`/api/projects/datasets/chunk`, {
+        params: {
+          project_id: projectId,
+          chunk_index: chunkIndex
+        }
+      });
+      setState(prev => ({
+        ...prev,
+        datasets: response.data.datasets,
+        selectedChunkContent: response.data.chunk_content,
+        loading: false
+      }));
+    } catch (error) {
+      console.error('获取分块数据集失败:', error);
+      setState(prev => ({
+        ...prev,
+        loading: false
+      }));
+    }
+  };
+
+  const handleGenerateDataset = async () => {
+    if (!state.selectedFile || state.selectedChunkIndex === null) return;
+
+    setState(prev => ({ ...prev, loading: true }));
+
+    try {
+      const response = await fetch(`/api/projects/${projectId}/texts/${state.selectedFile.id}/chunk/${state.selectedChunkIndex}/generate-dataset`, {
+        method: 'POST'
+      });
+      const newDataset = await response.json();
+      
+      setState(prev => ({
+        ...prev,
+        datasets: [...prev.datasets, newDataset],
+        loading: false
+      }));
+    } catch (error) {
+      console.error('生成数据集失败:', error);
+      setState(prev => ({ ...prev, loading: false }));
     }
   };
 
@@ -301,7 +454,10 @@ export default function Project() {
         project_id: projectId,
         question_ids: questions.map((q) => q.id),
       });
-      setDatasets([...datasets, response.data]);
+      setState(prev => ({
+        ...prev,
+        datasets: [...prev.datasets, response.data]
+      }));
       setOpenDataset(false);
       setNewDataset({ name: '', description: '' });
     } catch (error) {
@@ -367,20 +523,6 @@ export default function Project() {
       }
     };
   }, [uploadController, fileUrl]);
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      if (file.size > 10 * 1024 * 1024) {
-        setError('文件大小不能超过10MB');
-        return;
-      }
-      const url = URL.createObjectURL(file);
-      setFileUrl(url);
-      setSelectedFile(file);
-      setError(null);
-    }
-  };
 
   const handleEditClick = (text: Text) => {
     setEditingText(text);
@@ -517,14 +659,14 @@ export default function Project() {
                                 <Button
                                   variant="outlined"
                                   size="small"
-                                  startIcon={<QuestionIcon />}
+                                  startIcon={<DatasetIcon />}
                                   onClick={() => {
                                     setSelectedTextId(text.id);
-                                    setOpenGenerateQuestions(true);
+                                    setOpenGenerateDataset(true);
                                   }}
                                   sx={{ mr: 1 }}
                                 >
-                                  生成问题
+                                  生成数据集
                                 </Button>
                                 <IconButton 
                                   size="small" 
@@ -645,55 +787,135 @@ export default function Project() {
           <Route
             path="datasets"
             element={
-              <Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-                  <Typography variant="h5">数据集列表</Typography>
-                  <Button
-                    variant="contained"
-                    startIcon={<AddIcon />}
-                    onClick={() => setOpenDataset(true)}
-                  >
-                    创建数据集
-                  </Button>
-                </Box>
-                {datasets.length === 0 ? (
-                  <Paper sx={{ p: 3, textAlign: 'center' }}>
-                    <Typography color="text.secondary">
-                      暂无数据集，请点击上方按钮创建数据集
-                    </Typography>
-                  </Paper>
-                ) : (
-                  <Grid container spacing={3}>
-                    {datasets.map((dataset) => (
-                      <Grid item xs={12} sm={6} md={4} key={dataset.id}>
-                        <Card>
-                          <CardContent>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <Typography variant="h6">{dataset.name}</Typography>
-                              <Box>
-                                <IconButton size="small" onClick={() => handleExportDataset(dataset)}>
-                                  <DownloadIcon />
-                                </IconButton>
-                                <IconButton size="small">
-                                  <EditIcon />
-                                </IconButton>
-                                <IconButton size="small" color="error">
-                                  <DeleteIcon />
-                                </IconButton>
+              <Box sx={styles.projectContainer}>
+                <Box sx={styles.fileList}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
+                    <Typography variant="h5">文件列表</Typography>
+                    <Button
+                      variant="contained"
+                      startIcon={<AddIcon />}
+                      onClick={() => setOpenUpload(true)}
+                    >
+                      上传文件
+                    </Button>
+                  </Box>
+                  {texts.length === 0 ? (
+                    <Paper sx={{ p: 3, textAlign: 'center' }}>
+                      <Typography color="text.secondary">
+                        暂无文件，请先上传文件
+                      </Typography>
+                    </Paper>
+                  ) : (
+                    <Grid container spacing={3}>
+                      {texts.map((text) => (
+                        <Grid item xs={12} key={text.id}>
+                          <Card
+                            sx={{
+                              cursor: 'pointer',
+                              ...(state.selectedFile?.id === text.id ? {
+                                border: '2px solid #2196f3'
+                              } : {})
+                            }}
+                            onClick={() => handleFileSelect(text)}
+                          >
+                            <CardContent>
+                              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                                <Typography variant="h6">{text.title}</Typography>
                               </Box>
-                            </Box>
-                            <Typography color="text.secondary" sx={{ mb: 1 }}>
-                              {dataset.description}
-                            </Typography>
-                            <Chip
-                              label={`${dataset.items.length} 个问答对`}
-                              size="small"
-                            />
-                          </CardContent>
-                        </Card>
-                      </Grid>
+                              <Typography color="text.secondary" sx={{ mb: 2 }}>
+                                上传时间：{new Date(text.created_at).toLocaleString()}
+                              </Typography>
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  maxHeight: '100px',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  display: '-webkit-box',
+                                  WebkitLineClamp: 3,
+                                  WebkitBoxOrient: 'vertical',
+                                }}
+                              >
+                                {text.content}
+                              </Typography>
+                            </CardContent>
+                          </Card>
+                        </Grid>
+                      ))}
+                    </Grid>
+                  )}
+                </Box>
+
+                {state.selectedFile && (
+                  <Box sx={styles.chunkList}>
+                    <Typography variant="h6" gutterBottom>分块列表</Typography>
+                    {state.selectedFile.chunks.map((chunk, index) => (
+                      <Box
+                        key={index}
+                        sx={{
+                          ...styles.chunkItem,
+                          ...(state.selectedChunkIndex === index ? { backgroundColor: '#e3f2fd', borderColor: '#2196f3' } : {})
+                        }}
+                        onClick={() => handleChunkSelect(index)}
+                      >
+                        <Typography>分块 {index + 1}</Typography>
+                        <Typography sx={styles.chunkSize}>{chunk.content.length} 字符</Typography>
+                      </Box>
                     ))}
-                  </Grid>
+                  </Box>
+                )}
+
+                {state.selectedChunkIndex !== null && (
+                  <Box sx={styles.datasetContent}>
+                    <Box sx={styles.datasetHeader}>
+                      <Typography variant="h6">数据集列表</Typography>
+                      <Button
+                        variant="contained"
+                        onClick={handleGenerateDataset}
+                        disabled={state.loading}
+                      >
+                        {state.loading ? '生成中...' : '生成数据集'}
+                      </Button>
+                    </Box>
+                    
+                    <Paper sx={{ p: 2, mb: 3 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+                        <Typography variant="subtitle1" gutterBottom>分块内容预览</Typography>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          onClick={() => {
+                            // 打开查看完整内容的对话框
+                            setOpenViewContent(true);
+                          }}
+                        >
+                          查看完整内容
+                        </Button>
+                      </Box>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          maxHeight: '100px',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          display: '-webkit-box',
+                          WebkitLineClamp: 3,
+                          WebkitBoxOrient: 'vertical',
+                        }}
+                      >
+                        {state.selectedChunkContent}
+                      </Typography>
+                    </Paper>
+                    
+                    <Box sx={styles.datasetList}>
+                      {state.datasets.map(dataset => (
+                        <DatasetCard
+                          key={dataset.id}
+                          dataset={dataset}
+                        />
+                      ))}
+                    </Box>
+                  </Box>
                 )}
               </Box>
             }
@@ -774,7 +996,7 @@ export default function Project() {
       <Dialog
         open={openUpload}
         onClose={() => {
-          if (!uploading) {
+          if (!state.loading) {
             handleCancelUpload();
           }
         }}
@@ -783,7 +1005,7 @@ export default function Project() {
       >
         <DialogTitle>上传文件</DialogTitle>
         <DialogContent>
-          {uploading && (
+          {state.loading && (
             <Box sx={{ mt: 2 }}>
               <LinearProgress variant="determinate" value={uploadProgress} />
               <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
@@ -797,18 +1019,18 @@ export default function Project() {
               style={{ display: 'none' }}
               id="raised-button-file"
               type="file"
-              onChange={handleFileSelect}
+              onChange={handleFileInputChange}
             />
             <label htmlFor="raised-button-file">
               <Button variant="outlined" component="span" fullWidth>
                 选择文件
               </Button>
             </label>
-            {selectedFile && (
+            {fileUrl && (
               <Typography sx={{ mt: 2 }}>
-                已选择: {selectedFile.name}
+                已选择: {(document.getElementById('raised-button-file') as HTMLInputElement)?.files?.[0]?.name}
                 <br />
-                大小: {(selectedFile.size / 1024).toFixed(2)} KB
+                大小: {((document.getElementById('raised-button-file') as HTMLInputElement)?.files?.[0]?.size || 0 / 1024).toFixed(2)} KB
               </Typography>
             )}
             {error && (
@@ -821,16 +1043,16 @@ export default function Project() {
         <DialogActions>
           <Button
             onClick={handleCancelUpload}
-            disabled={uploading}
+            disabled={state.loading}
           >
             取消
           </Button>
           <Button
             onClick={handleUpload}
             variant="contained"
-            disabled={!selectedFile || uploading}
+            disabled={!fileUrl || state.loading}
           >
-            {uploading ? '上传中...' : '上传'}
+            {state.loading ? '上传中...' : '上传'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -871,44 +1093,44 @@ export default function Project() {
       </Dialog>
 
       <Dialog
-        open={openGenerateQuestions}
+        open={openGenerateDataset}
         onClose={() => {
-          setOpenGenerateQuestions(false);
+          setOpenGenerateDataset(false);
           setSelectedTextId(null);
           setError(null);
         }}
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>生成问题</DialogTitle>
+        <DialogTitle>生成数据集</DialogTitle>
         <DialogContent>
-          {generatingQuestions && <LinearProgress sx={{ mt: 1 }} />}
+          {state.loading && <LinearProgress sx={{ mt: 1 }} />}
           {error && (
             <Alert severity="error" sx={{ mt: 2 }}>
               {error}
             </Alert>
           )}
           <Typography sx={{ mt: 2 }}>
-            确定要为选中的文件生成问题吗？这可能需要一些时间。
+            确定要为选中的文件生成数据集吗？这可能需要一些时间。
           </Typography>
         </DialogContent>
         <DialogActions>
           <Button
             onClick={() => {
-              setOpenGenerateQuestions(false);
+              setOpenGenerateDataset(false);
               setSelectedTextId(null);
               setError(null);
             }}
-            disabled={generatingQuestions}
+            disabled={state.loading}
           >
             取消
           </Button>
           <Button
-            onClick={handleGenerateQuestions}
+            onClick={handleGenerateDataset}
             variant="contained"
-            disabled={generatingQuestions}
+            disabled={state.loading}
           >
-            {generatingQuestions ? '生成中...' : '生成问题'}
+            {state.loading ? '生成中...' : '生成数据集'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -958,6 +1180,30 @@ export default function Project() {
           <Button onClick={handleDownloadConfirm} variant="contained" startIcon={<DownloadIcon />}>
             下载
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={openViewContent}
+        onClose={() => setOpenViewContent(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>分块完整内容</DialogTitle>
+        <DialogContent>
+          <Typography
+            variant="body1"
+            sx={{
+              whiteSpace: 'pre-wrap',
+              maxHeight: '60vh',
+              overflow: 'auto'
+            }}
+          >
+            {state.selectedFile?.chunks[state.selectedChunkIndex!]?.content}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenViewContent(false)}>关闭</Button>
         </DialogActions>
       </Dialog>
     </Box>

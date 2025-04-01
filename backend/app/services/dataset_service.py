@@ -1,12 +1,13 @@
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from ..models.dataset import Dataset, DatasetCreate
-from ..models.database import Dataset as DatasetModel, DatasetItem as DatasetItemModel
+from ..models.database import Dataset as DatasetModel, DatasetItem as DatasetItemModel, Text as TextModel
 from ..services.question_service import QuestionService
 import uuid
 from datetime import datetime
 from crewai import Agent, Task, Crew
 from ..core.config import settings
+from ..services.text_service import TextService
 
 
 class DatasetService:
@@ -184,3 +185,113 @@ class DatasetService:
             "description": dataset.description,
             "items": dataset.items
         }
+
+    @staticmethod
+    async def generate_dataset_from_text(db: Session, text_id: str, project_id: str) -> Dataset:
+        """从文本生成数据集"""
+        # 获取文本内容
+        text = await TextService.get_text(db, text_id)
+        if not text:
+            raise ValueError("文本不存在")
+
+        # 创建数据集
+        dataset_data = DatasetCreate(
+            name=f"从文本生成的数据集 - {text.title}",
+            description=f"基于文本 '{text.title}' 自动生成的数据集",
+            project_id=project_id,
+            question_ids=[]  # 暂时为空，后续会添加问题ID
+        )
+        dataset = await DatasetService.create_dataset(db, dataset_data)
+
+        # 生成问题
+        questions = await QuestionService.generate_questions(db, text)
+        
+        # 创建数据集项
+        for question in questions:
+            db_item = DatasetItemModel(
+                id=str(uuid.uuid4()),
+                dataset_id=dataset.id,
+                question=question.content,
+                answer=question.answer,
+                item_metadata=question.metadata,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            db.add(db_item)
+
+        db.commit()
+
+        # 返回完整的数据集
+        return await DatasetService.get_dataset(db, dataset.id)
+
+    @staticmethod
+    async def list_chunk_datasets(db: Session, project_id: str, chunk_index: int) -> Dict[str, Any]:
+        """获取特定分块的数据集列表"""
+        # 获取文本内容
+        text = db.query(TextModel).filter(
+            TextModel.project_id == project_id
+        ).first()
+        if not text:
+            return {"chunk_content": "", "datasets": []}
+            
+        # 获取分块内容
+        chunk_content = ""
+        if text.chunks and len(text.chunks) > chunk_index:
+            chunk_content = text.chunks[chunk_index]["content"]
+            
+        # 获取该分块的数据集
+        datasets = db.query(DatasetModel).filter(
+            DatasetModel.project_id == project_id,
+            DatasetModel.chunk_index == chunk_index
+        ).all()
+        
+        return {
+            "chunk_content": chunk_content[:200] + "..." if len(chunk_content) > 200 else chunk_content,  # 只返回前200个字符
+            "datasets": [Dataset.from_orm(dataset) for dataset in datasets]
+        }
+
+    @staticmethod
+    async def generate_dataset_from_chunk(db: Session, text_id: str, chunk_index: int, project_id: str) -> Dataset:
+        """从特定分块生成数据集"""
+        # 获取文本内容
+        text = await TextService.get_text(db, text_id)
+        if not text:
+            raise ValueError("文本不存在")
+        
+        if not text.chunks or chunk_index >= len(text.chunks):
+            raise ValueError("分块不存在")
+
+        # 获取指定分块
+        chunk = text.chunks[chunk_index]
+
+        # 创建数据集
+        dataset_data = DatasetCreate(
+            name=f"从文本生成的数据集 - {text.title} (分块 {chunk_index + 1})",
+            description=f"基于文本 '{text.title}' 的第 {chunk_index + 1} 个分块自动生成的数据集",
+            project_id=project_id,
+            chunk_index=chunk_index,
+            question_ids=[]  # 暂时为空，后续会添加问题ID
+        )
+        dataset = await DatasetService.create_dataset(db, dataset_data)
+
+        # 生成问题
+        questions = await QuestionService.generate_questions(db, text, chunk_index)
+        
+        # 创建数据集项
+        for question in questions:
+            db_item = DatasetItemModel(
+                id=str(uuid.uuid4()),
+                dataset_id=dataset.id,
+                question=question.content,
+                answer=question.answer,
+                item_metadata=question.metadata,
+                chunk_index=chunk_index,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            db.add(db_item)
+
+        db.commit()
+
+        # 返回完整的数据集
+        return await DatasetService.get_dataset(db, dataset.id)

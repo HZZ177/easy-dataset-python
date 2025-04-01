@@ -65,7 +65,10 @@ class Dataset(Base):
     id = Column(String, primary_key=True)
     name = Column(String, nullable=False)
     description = Column(String)
-    project_id = Column(String, ForeignKey("projects.id", ondelete="CASCADE"))
+    project_id = Column(String, ForeignKey("projects.id"), nullable=False)
+    text_id = Column(String, ForeignKey("texts.id"), nullable=False)
+    chunk_index = Column(Integer, nullable=False)
+    items = Column(JSON, default=list)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

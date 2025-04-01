@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime
 
 
@@ -7,7 +7,7 @@ class TextChunk(BaseModel):
     content: str
     start_index: int
     end_index: int
-    metadata: Optional[dict] = None
+    metadata: Optional[Dict] = None
 
 
 class TextBase(BaseModel):
@@ -17,7 +17,7 @@ class TextBase(BaseModel):
     file_path: str
     file_size: Optional[int] = None
     total_chunks: Optional[int] = None
-    chunks: Optional[List[str]] = None
+    chunks: Optional[List[TextChunk]] = None
 
 
 class TextCreate(TextBase):

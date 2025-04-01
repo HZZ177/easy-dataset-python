@@ -44,34 +44,10 @@ class TextService:
             if iteration_count >= max_iterations:
                 raise ValueError("文本分割次数过多，可能存在异常")
 
+            # 计算当前块的结束位置
             end = min(start + settings.MAX_CHUNK_SIZE, len(text))
-
-            # 如果已经到达文本末尾
-            if end == len(text):
-                chunk = {
-                    "content": text[start:end],
-                    "start_index": start,
-                    "end_index": end,
-                    "metadata": {"length": end - start}
-                }
-                chunks.append(chunk)
-                break
-
-            # 尝试在句子边界分割
-            sentence_endings = '.。!！?？\n'
-            found_boundary = False
-
-            # 向前查找最近的句子结束符
-            for i in range(end, start, -1):
-                if text[i - 1] in sentence_endings:
-                    end = i
-                    found_boundary = True
-                    break
-
-            # 如果没找到合适的边界，就在最大长度处分割
-            if not found_boundary:
-                end = min(start + settings.MAX_CHUNK_SIZE, len(text))
-
+            
+            # 创建当前块
             chunk = {
                 "content": text[start:end],
                 "start_index": start,
@@ -79,6 +55,10 @@ class TextService:
                 "metadata": {"length": end - start}
             }
             chunks.append(chunk)
+
+            # 如果已经到达文本末尾，退出循环
+            if end >= len(text):
+                break
 
             # 更新起始位置，考虑重叠
             start = max(end - settings.CHUNK_OVERLAP, start + 1)
@@ -94,6 +74,9 @@ class TextService:
             file_id = str(uuid.uuid4())
             text_data.file_path = f"uploads/{file_id}.txt"
 
+        # 将 chunks 转换为 JSON 格式
+        chunks_json = [chunk.dict() for chunk in text_data.chunks] if text_data.chunks else []
+
         # 创建新的文本记录
         db_text = TextModel(
             id=str(uuid.uuid4()),
@@ -103,7 +86,7 @@ class TextService:
             file_path=text_data.file_path,
             file_size=text_data.file_size or 0,
             total_chunks=text_data.total_chunks or 0,
-            chunks=text_data.chunks or [],
+            chunks=chunks_json,
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow()
         )
@@ -159,3 +142,11 @@ class TextService:
         db.commit()
         db.refresh(db_text)
         return Text.from_orm(db_text)
+
+    @staticmethod
+    async def get_text_chunks(db: Session, text_id: str) -> List[dict]:
+        """获取文本的分块数据"""
+        text = await TextService.get_text(db, text_id)
+        if not text:
+            raise ValueError("文本不存在")
+        return text.chunks

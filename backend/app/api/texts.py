@@ -56,3 +56,18 @@ async def get_project_text_count(project_id: str = Query(..., description="项�
     """获取项目下的文本数量"""
     count = await TextService.get_text_count(db, project_id)
     return {"count": count}
+
+
+@router.get("/chunks")
+async def get_text_chunks(
+    text_id: str = Query(..., description="文本ID"),
+    db: Session = Depends(get_db)
+):
+    """获取文本的分块数据"""
+    try:
+        chunks = await TextService.get_text_chunks(db, text_id)
+        return chunks
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取分块数据失败: {str(e)}")

@@ -5,7 +5,7 @@ from urllib.parse import quote
 from backend.app.models.project import Project, ProjectCreate
 from backend.app.models.text import Text, TextCreate
 from backend.app.models.question import Question
-from backend.app.models.dataset import Dataset, DatasetCreate
+from backend.app.models.dataset import Dataset, DatasetCreate, ChunkDatasetResponse
 from backend.app.services.project_service import ProjectService
 from backend.app.services.text_service import TextService
 from backend.app.services.question_service import QuestionService
@@ -78,10 +78,13 @@ async def upload_text(
 ):
     """上传文本文件"""
     content = await file.read()
-    content_str = content.decode()
+    content_str = content.decode("utf-8")
 
     # 保存文件
     file_path = await TextService.save_uploaded_file(content, file.filename)
+
+    # 分块处理文本
+    chunks = TextService.split_text(content_str)
 
     # 创建文本记录
     text_data = TextCreate(
@@ -90,6 +93,8 @@ async def upload_text(
         content=content_str,
         file_path=file_path,
         file_size=len(content),
+        total_chunks=len(chunks),
+        chunks=chunks
     )
 
     return await TextService.create_text(db, text_data)
@@ -190,3 +195,41 @@ async def download_text(text_id: str = Query(..., description="文本ID"), db: S
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"读取文件失败: {str(e)}")
+
+
+@router.post("/generate-dataset", response_model=Dataset)
+async def generate_dataset(
+    project_id: str = Query(..., description="项目ID"),
+    text_id: str = Query(..., description="文本ID"),
+    db: Session = Depends(get_db)
+):
+    """从文本生成数据集"""
+    try:
+        dataset = await DatasetService.generate_dataset_from_text(db, text_id, project_id)
+        return dataset
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"生成数据集失败: {str(e)}")
+
+
+@router.get("/datasets/chunk", response_model=ChunkDatasetResponse)
+async def list_chunk_datasets(
+    project_id: str = Query(..., description="项目ID"),
+    chunk_index: int = Query(..., description="分块索引"),
+    db: Session = Depends(get_db)
+):
+    """获取特定分块的数据集列表"""
+    return await DatasetService.list_chunk_datasets(db, project_id, chunk_index)
+
+
+@router.post("/{project_id}/texts/{text_id}/chunk/{chunk_index}/generate-dataset")
+async def generate_dataset_from_chunk(
+    project_id: str,
+    text_id: str,
+    chunk_index: int,
+    db: Session = Depends(get_db)
+):
+    """从特定分块生成数据集"""
+    dataset = await DatasetService.generate_dataset_from_chunk(db, text_id, chunk_index, project_id)
+    return dataset
