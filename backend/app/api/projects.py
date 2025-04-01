@@ -34,7 +34,18 @@ async def get_project(project_id: str = Query(..., description="项目ID"), db: 
 @router.get("/", response_model=List[Project])
 async def list_projects(db: Session = Depends(get_db)):
     """获取所有项目"""
-    return await ProjectService.list_projects(db)
+    projects = await ProjectService.list_projects(db)
+    result = []
+    for project in projects:
+        # 转换为字典
+        project_dict = project.model_dump()
+        # 获取文本数量
+        text_count = await TextService.get_text_count(db, project.id)
+        # 添加文本数量
+        project_dict["text_count"] = text_count
+        # 创建新的 Project 对象
+        result.append(Project(**project_dict))
+    return result
 
 
 @router.post("/update", response_model=Project)

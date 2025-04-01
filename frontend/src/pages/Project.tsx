@@ -80,6 +80,7 @@ interface Dataset {
 
 export default function Project() {
   const { projectId } = useParams<{ projectId: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
   const [project, setProject] = useState<Project | null>(null);
   const [texts, setTexts] = useState<Text[]>([]);
@@ -110,9 +111,90 @@ export default function Project() {
   const [downloadTextId, setDownloadTextId] = useState<string | null>(null);
   const [downloadTextTitle, setDownloadTextTitle] = useState<string | null>(null);
 
+  // 获取当前 tab
+  const currentTab = location.pathname.split('/').pop() || 'texts';
+
+  // 获取项目基本信息
+  const fetchProjectDetail = async () => {
+    if (!projectId) return;
+    try {
+      const response = await axios.get(`/api/projects/detail?project_id=${projectId}`);
+      setProject(response.data);
+    } catch (error) {
+      console.error('Error fetching project details:', error);
+      setError('加载项目信息失败');
+    }
+  };
+
+  // 获取文本列表
+  const fetchTexts = async () => {
+    if (!projectId) return;
+    setLoading(true);
+    try {
+      const response = await axios.get(`/api/texts/list?project_id=${projectId}`);
+      setTexts(response.data);
+    } catch (error) {
+      console.error('Error fetching texts:', error);
+      setError('加载文件列表失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 获取问题列表
+  const fetchQuestions = async () => {
+    if (!projectId) return;
+    setLoading(true);
+    try {
+      const response = await axios.get(`/api/questions/list?project_id=${projectId}`);
+      setQuestions(response.data);
+    } catch (error) {
+      console.error('Error fetching questions:', error);
+      setError('加载问题列表失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 获取数据集列表
+  const fetchDatasets = async () => {
+    if (!projectId) return;
+    setLoading(true);
+    try {
+      const response = await axios.get(`/api/datasets/list?project_id=${projectId}`);
+      setDatasets(response.data);
+    } catch (error) {
+      console.error('Error fetching datasets:', error);
+      setError('加载数据集列表失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 初始加载项目信息
   useEffect(() => {
-    fetchProjectData();
+    fetchProjectDetail();
   }, [projectId]);
+
+  // 根据当前 tab 加载对应数据
+  useEffect(() => {
+    if (!projectId) return;
+    
+    switch (currentTab) {
+      case 'texts':
+        fetchTexts();
+        break;
+      case 'questions':
+        fetchQuestions();
+        break;
+      case 'datasets':
+        fetchDatasets();
+        break;
+      case 'settings':
+        setLoading(false); // 设置页面不需要加载数据
+        break;
+    }
+  }, [projectId, currentTab]);
 
   useEffect(() => {
     if (project) {
@@ -120,31 +202,8 @@ export default function Project() {
     }
   }, [project]);
 
-  const fetchProjectData = async () => {
-    if (!projectId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const [projectRes, textsRes, questionsRes, datasetsRes] = await Promise.all([
-        axios.get(`/api/projects/detail?project_id=${projectId}`),
-        axios.get(`/api/texts/list?project_id=${projectId}`),
-        axios.get(`/api/questions/list?project_id=${projectId}`),
-        axios.get(`/api/datasets/list?project_id=${projectId}`),
-      ]);
-      setProject(projectRes.data);
-      setTexts(textsRes.data);
-      setQuestions(questionsRes.data);
-      setDatasets(datasetsRes.data);
-    } catch (error) {
-      console.error('Error fetching project data:', error);
-      setError('加载项目数据失败');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleUpload = async () => {
-    if (!selectedFile) return;
+    if (!selectedFile || !projectId) return;
     
     try {
       setError(null);
@@ -175,7 +234,7 @@ export default function Project() {
 
       if (response.data) {
         await new Promise(resolve => setTimeout(resolve, 1000));
-        await fetchProjectData();
+        await fetchTexts(); // 只重新加载文本列表
         setOpenUpload(false);
       } else {
         throw new Error('上传响应数据格式错误');
@@ -413,7 +472,7 @@ export default function Project() {
   }
 
   if (error) {
-    return <ErrorState message={error} onRetry={fetchProjectData} />;
+    return <ErrorState message={error} onRetry={fetchProjectDetail} />;
   }
 
   if (!project || !projectId) {

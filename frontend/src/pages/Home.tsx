@@ -59,26 +59,7 @@ export default function Home() {
       const response = await axios.get('/api/projects');
       console.log('API响应:', response);
       if (Array.isArray(response.data)) {
-        // 获取每个项目的文本数量
-        const projectsWithCount = await Promise.all(
-          response.data.map(async (project: Project) => {
-            try {
-              const countResponse = await axios.get(`/api/texts/count?project_id=${project.id}`);
-              return {
-                ...project,
-                text_count: countResponse.data.count || 0
-              };
-            } catch (error) {
-              console.warn(`获取项目 ${project.id} 的文本数量失败:`, error);
-              return {
-                ...project,
-                text_count: 0
-              };
-            }
-          })
-        );
-        console.log('项目列表:', projectsWithCount);
-        setProjects(projectsWithCount);
+        setProjects(response.data);
       } else {
         console.error('API返回的数据格式不正确:', response.data);
         setError('获取项目列表失败：数据格式不正确');

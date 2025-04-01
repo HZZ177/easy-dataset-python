@@ -26,9 +26,11 @@ class Project(ProjectBase):
     texts: List[str] = []
     questions: List[str] = []
     datasets: List[str] = []
+    text_count: Optional[int] = None
 
     class Config:
         from_attributes = True
+        populate_by_name = True
 
 
 class ProjectUpdate(BaseModel):
