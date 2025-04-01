@@ -272,20 +272,37 @@ export default function Project() {
   useEffect(() => {
     if (!projectId) return;
     
-    switch (currentTab) {
-      case 'texts':
-        fetchTexts();
-        break;
-      case 'questions':
-        fetchQuestions();
-        break;
-      case 'datasets':
-        fetchDatasets();
-        break;
-      case 'settings':
-        setLoading(false); // 设置页面不需要加载数据
-        break;
-    }
+    const loadData = async () => {
+      setLoading(true);
+      try {
+        // 如果是数据集页面，需要同时加载文本列表
+        if (currentTab === 'datasets') {
+          await fetchTexts();
+        }
+        
+        switch (currentTab) {
+          case 'texts':
+            await fetchTexts();
+            break;
+          case 'questions':
+            await fetchQuestions();
+            break;
+          case 'datasets':
+            await fetchDatasets();
+            break;
+          case 'settings':
+            setLoading(false);
+            break;
+        }
+      } catch (error) {
+        console.error('Error loading data:', error);
+        setError('加载数据失败');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
   }, [projectId, currentTab]);
 
   useEffect(() => {
@@ -609,6 +626,25 @@ export default function Project() {
     }
   };
 
+  const handleGenerateQuestions = async () => {
+    if (!state.selectedFile || state.selectedChunkIndex === null) return;
+
+    setState(prev => ({ ...prev, loading: true }));
+
+    try {
+      const response = await axios.post(`/api/projects/${projectId}/texts/${state.selectedFile.id}/chunk/${state.selectedChunkIndex}/generate-questions`);
+      // 刷新问题列表
+      await fetchQuestions();
+      setOpenGenerateQuestions(false);
+      setSelectedTextId(null);
+    } catch (error) {
+      console.error('生成问题失败:', error);
+      setError('生成问题失败');
+    } finally {
+      setState(prev => ({ ...prev, loading: false }));
+    }
+  };
+
   if (loading) {
     return <LoadingState />;
   }
@@ -871,10 +907,13 @@ export default function Project() {
                       <Typography variant="h6">数据集列表</Typography>
                       <Button
                         variant="contained"
-                        onClick={handleGenerateDataset}
+                        onClick={() => {
+                          setSelectedTextId(state.selectedFile?.id || null);
+                          setOpenGenerateQuestions(true);
+                        }}
                         disabled={state.loading}
                       >
-                        {state.loading ? '生成中...' : '生成数据集'}
+                        {state.loading ? '生成中...' : '生成问题'}
                       </Button>
                     </Box>
                     
@@ -1093,16 +1132,16 @@ export default function Project() {
       </Dialog>
 
       <Dialog
-        open={openGenerateDataset}
+        open={openGenerateQuestions}
         onClose={() => {
-          setOpenGenerateDataset(false);
+          setOpenGenerateQuestions(false);
           setSelectedTextId(null);
           setError(null);
         }}
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>生成数据集</DialogTitle>
+        <DialogTitle>生成问题</DialogTitle>
         <DialogContent>
           {state.loading && <LinearProgress sx={{ mt: 1 }} />}
           {error && (
@@ -1111,13 +1150,13 @@ export default function Project() {
             </Alert>
           )}
           <Typography sx={{ mt: 2 }}>
-            确定要为选中的文件生成数据集吗？这可能需要一些时间。
+            确定要为选中的分块生成问题吗？这可能需要一些时间。
           </Typography>
         </DialogContent>
         <DialogActions>
           <Button
             onClick={() => {
-              setOpenGenerateDataset(false);
+              setOpenGenerateQuestions(false);
               setSelectedTextId(null);
               setError(null);
             }}
@@ -1126,11 +1165,11 @@ export default function Project() {
             取消
           </Button>
           <Button
-            onClick={handleGenerateDataset}
+            onClick={handleGenerateQuestions}
             variant="contained"
             disabled={state.loading}
           >
-            {state.loading ? '生成中...' : '生成数据集'}
+            {state.loading ? '生成中...' : '生成问题'}
           </Button>
         </DialogActions>
       </Dialog>
