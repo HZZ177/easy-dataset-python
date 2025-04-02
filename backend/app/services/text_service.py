@@ -4,28 +4,26 @@ from datetime import datetime
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from backend.app.schemas.text import Text, TextCreate, TextUpdate
-from backend.app.models.database import Text as TextModel
+from backend.app.models.database import Text as TextModel, Chunk as ChunkModel
 from backend.app.core.config import settings
+from backend.core.logger import logger
 
 
 class TextService:
     @staticmethod
-    async def save_uploaded_file(content: bytes, original_filename: str) -> str:
+    async def save_uploaded_file(content: bytes, filename: str) -> str:
         """保存上传的文件"""
-        # 确保上传目录存在
-        os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-
-        # 生成唯一的文件名，保留原始扩展名
         file_id = str(uuid.uuid4())
-        file_extension = os.path.splitext(original_filename)[1]  # 获取原始文件的扩展名
-        if not file_extension:  # 如果没有扩展名，默认使用.txt
-            file_extension = ".txt"
-        file_path = os.path.join(settings.UPLOAD_DIR, f"{file_id}{file_extension}")
-
+        file_path = f"uploads/{file_id}.txt"
+        full_path = os.path.join(settings.BASE_DIR, file_path)
+        
+        # 确保目录存在
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        
         # 保存文件
-        with open(file_path, 'wb') as f:
+        with open(full_path, "wb") as f:
             f.write(content)
-
+            
         return file_path
 
     @staticmethod
@@ -67,15 +65,12 @@ class TextService:
         return chunks
 
     @staticmethod
-    async def create_text(db: Session, text_data: TextCreate) -> Text:
+    async def create_text(db: Session, text_data: TextCreate) -> TextModel:
         """创建新的文本记录"""
         # 如果没有提供file_path，生成一个
         if not text_data.file_path:
             file_id = str(uuid.uuid4())
             text_data.file_path = f"uploads/{file_id}.txt"
-
-        # 将 chunks 转换为 JSON 格式
-        chunks_json = [chunk.dict() for chunk in text_data.chunks] if text_data.chunks else []
 
         # 创建新的文本记录
         db_text = TextModel(
@@ -86,7 +81,7 @@ class TextService:
             file_path=text_data.file_path,
             file_size=text_data.file_size or 0,
             total_chunks=text_data.total_chunks or 0,
-            chunks=chunks_json,
+            status="active",  # 添加状态字段
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow()
         )
@@ -94,12 +89,49 @@ class TextService:
         db.add(db_text)
         db.commit()
         db.refresh(db_text)
+
+        # 创建分块记录
+        if text_data.chunks:
+            for chunk in text_data.chunks:
+                db_chunk = ChunkModel(
+                    id=str(uuid.uuid4()),
+                    content=chunk.content,
+                    start_index=chunk.start_index,
+                    end_index=chunk.end_index,
+                    chunk_metadata=chunk.metadata,
+                    text_id=db_text.id,
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow()
+                )
+                db.add(db_chunk)
+
+            db.commit()
+
         return db_text
 
     @staticmethod
     async def get_text(db: Session, text_id: str) -> Optional[TextModel]:
         """获取文本记录"""
         return db.query(TextModel).filter(TextModel.id == text_id).first()
+
+    @staticmethod
+    async def get_text_chunks(db: Session, text_id: str) -> List[dict]:
+        """获取文本的分块数据"""
+        text = await TextService.get_text(db, text_id)
+        if not text:
+            raise ValueError("文本不存在")
+        
+        # 从数据库获取分块
+        chunks = db.query(ChunkModel).filter(ChunkModel.text_id == text_id).all()
+        return [
+            {
+                "content": chunk.content,
+                "start_index": chunk.start_index,
+                "end_index": chunk.end_index,
+                "metadata": chunk.chunk_metadata
+            }
+            for chunk in chunks
+        ]
 
     @staticmethod
     async def list_texts(db: Session, project_id: str) -> List[Text]:
@@ -123,6 +155,7 @@ class TextService:
         if os.path.exists(db_text.file_path):
             os.remove(db_text.file_path)
 
+        # 删除关联的分块（通过级联删除自动处理）
         db.delete(db_text)
         db.commit()
         return True
@@ -142,11 +175,3 @@ class TextService:
         db.commit()
         db.refresh(db_text)
         return Text.from_orm(db_text)
-
-    @staticmethod
-    async def get_text_chunks(db: Session, text_id: str) -> List[dict]:
-        """获取文本的分块数据"""
-        text = await TextService.get_text(db, text_id)
-        if not text:
-            raise ValueError("文本不存在")
-        return text.chunks

@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List
-from app.core.database import get_db
-from app.schemas.question import Question, QuestionCreate, QuestionUpdate
-from app.services.question_service import QuestionService
+from backend.app.core.database import get_db
+from backend.app.schemas.question import Question, QuestionCreate, QuestionUpdate
+from backend.app.services.question_service import QuestionService
 
 router = APIRouter()
 

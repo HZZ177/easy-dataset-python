@@ -1,7 +1,7 @@
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
-from ..models.dataset import Dataset, DatasetCreate
-from ..models.database import Dataset as DatasetModel, DatasetItem as DatasetItemModel, Text as TextModel
+from ..models.dataset import Dataset, DatasetCreate, ChunkDatasetResponse
+from ..models.database import Dataset as DatasetModel, DatasetItem as DatasetItemModel, Text as TextModel, Chunk as ChunkModel
 from ..services.question_service import QuestionService
 import uuid
 from datetime import datetime
@@ -225,30 +225,38 @@ class DatasetService:
         return await DatasetService.get_dataset(db, dataset.id)
 
     @staticmethod
-    async def list_chunk_datasets(db: Session, project_id: str, chunk_index: int) -> Dict[str, Any]:
+    async def list_chunk_datasets(db: Session, project_id: str, chunk_index: int) -> ChunkDatasetResponse:
         """获取特定分块的数据集列表"""
-        # 获取文本内容
-        text = db.query(TextModel).filter(
-            TextModel.project_id == project_id
-        ).first()
-        if not text:
-            return {"chunk_content": "", "datasets": []}
-            
-        # 获取分块内容
-        chunk_content = ""
-        if text.chunks and len(text.chunks) > chunk_index:
-            chunk_content = text.chunks[chunk_index]["content"]
-            
-        # 获取该分块的数据集
+        # 获取项目下的所有文本
+        texts = db.query(TextModel).filter(TextModel.project_id == project_id).all()
+        if not texts:
+            return ChunkDatasetResponse(
+                chunk_content="",
+                datasets=[]
+            )
+
+        # 获取第一个文本的指定分块内容
+        text = texts[0]
+        chunks = db.query(ChunkModel).filter(ChunkModel.text_id == text.id).all()
+        if not chunks or chunk_index >= len(chunks):
+            return ChunkDatasetResponse(
+                chunk_content="",
+                datasets=[]
+            )
+
+        chunk = chunks[chunk_index]
+        chunk_content = chunk.content
+
+        # 获取该分块的所有数据集
         datasets = db.query(DatasetModel).filter(
             DatasetModel.project_id == project_id,
             DatasetModel.chunk_index == chunk_index
         ).all()
-        
-        return {
-            "chunk_content": chunk_content[:200] + "..." if len(chunk_content) > 200 else chunk_content,  # 只返回前200个字符
-            "datasets": [Dataset.from_orm(dataset) for dataset in datasets]
-        }
+
+        return ChunkDatasetResponse(
+            chunk_content=chunk_content,
+            datasets=[Dataset.from_orm(dataset) for dataset in datasets]
+        )
 
     @staticmethod
     async def generate_dataset_from_chunk(db: Session, text_id: str, chunk_index: int, project_id: str) -> Dataset:

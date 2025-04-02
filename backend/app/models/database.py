@@ -22,6 +22,22 @@ class Project(Base):
     datasets = relationship("Dataset", back_populates="project", cascade="all, delete-orphan")
 
 
+class Chunk(Base):
+    __tablename__ = "chunks"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    content = Column(Text, nullable=False)
+    start_index = Column(Integer, nullable=False)
+    end_index = Column(Integer, nullable=False)
+    chunk_metadata = Column(JSON, nullable=True)
+    text_id = Column(String, ForeignKey("texts.id", ondelete="CASCADE"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # 关联关系
+    text = relationship("Text", back_populates="chunks")
+
+
 class Text(Base):
     __tablename__ = "texts"
 
@@ -31,14 +47,15 @@ class Text(Base):
     file_path = Column(String, nullable=False)
     file_size = Column(Integer, nullable=True)
     total_chunks = Column(Integer, nullable=True)
-    chunks = Column(JSON, nullable=True)
     project_id = Column(String, ForeignKey("projects.id", ondelete="CASCADE"))
+    status = Column(String, default="active")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # 关联关系
     project = relationship("Project", back_populates="texts")
     questions = relationship("Question", back_populates="text", cascade="all, delete-orphan")
+    chunks = relationship("Chunk", back_populates="text", cascade="all, delete-orphan")
 
 
 class Question(Base):
@@ -50,6 +67,7 @@ class Question(Base):
     question_metadata = Column(JSON)
     project_id = Column(String, ForeignKey("projects.id", ondelete="CASCADE"))
     text_id = Column(String, ForeignKey("texts.id", ondelete="CASCADE"))
+    chunk_index = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

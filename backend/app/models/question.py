@@ -23,8 +23,10 @@ class Question(QuestionBase):
     status: str = "active"
     tags: List[str] = []
 
-    class Config:
-        from_attributes = True
+    model_config = {
+        "from_attributes": True,
+        "populate_by_name": True
+    }
 
 
 class QuestionUpdate(BaseModel):

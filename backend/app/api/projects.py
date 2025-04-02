@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 from urllib.parse import quote
 from backend.app.models.project import Project, ProjectCreate
-from backend.app.models.text import Text, TextCreate
+from backend.app.models.text import TextCreate, Text, TextChunk
 from backend.app.models.question import Question
 from backend.app.models.dataset import Dataset, DatasetCreate, ChunkDatasetResponse
 from backend.app.services.project_service import ProjectService
@@ -11,6 +11,7 @@ from backend.app.services.text_service import TextService
 from backend.app.services.question_service import QuestionService
 from backend.app.services.dataset_service import DatasetService
 from backend.app.core.database import get_db
+from backend.app.models.database import Text as TextModel
 import os
 
 router = APIRouter()
@@ -94,10 +95,28 @@ async def upload_text(
         file_path=file_path,
         file_size=len(content),
         total_chunks=len(chunks),
-        chunks=chunks
+        chunks=[TextChunk(**chunk) for chunk in chunks]
     )
 
-    return await TextService.create_text(db, text_data)
+    db_text = await TextService.create_text(db, text_data)
+    
+    # 获取分块数据
+    chunks_data = await TextService.get_text_chunks(db, db_text.id)
+    
+    # 创建返回的文本对象
+    return Text(
+        id=db_text.id,
+        title=db_text.title,
+        project_id=db_text.project_id,
+        content=db_text.content,
+        file_path=db_text.file_path,
+        file_size=db_text.file_size,
+        total_chunks=db_text.total_chunks,
+        chunks=[TextChunk(**chunk) for chunk in chunks_data],
+        created_at=db_text.created_at,
+        updated_at=db_text.updated_at,
+        status=db_text.status
+    )
 
 
 @router.post("/generate-questions", response_model=List[Question])
@@ -233,3 +252,28 @@ async def generate_dataset_from_chunk(
     """从特定分块生成数据集"""
     dataset = await DatasetService.generate_dataset_from_chunk(db, text_id, chunk_index, project_id)
     return dataset
+
+
+@router.post("/{project_id}/texts/{text_id}/chunk/{chunk_index}/generate-questions", response_model=List[Question])
+async def generate_questions_for_chunk(
+    project_id: str,
+    text_id: str,
+    chunk_index: int,
+    db: Session = Depends(get_db)
+):
+    """为特定文本分块生成问题"""
+    # 获取文本对象
+    text = db.query(TextModel).filter(TextModel.id == text_id, TextModel.project_id == project_id).first()
+    if not text:
+        raise HTTPException(status_code=404, detail="文本不存在")
+    
+    # 检查分块索引是否有效
+    if not text.chunks or chunk_index >= len(text.chunks):
+        raise HTTPException(status_code=400, detail=f"分块索引 {chunk_index} 超出范围")
+    
+    # 创建 QuestionService 实例
+    question_service = QuestionService()
+    
+    # 生成问题
+    questions = await question_service.generate_questions(db, text, chunk_index)
+    return questions

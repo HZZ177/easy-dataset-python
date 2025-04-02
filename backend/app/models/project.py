@@ -6,7 +6,7 @@ from datetime import datetime
 class ProjectBase(BaseModel):
     name: str
     description: str = ""
-    model_config: Optional[dict] = None
+    llm_config: Optional[dict] = None
 
 
 class ProjectCreate(ProjectBase):
@@ -28,13 +28,14 @@ class Project(ProjectBase):
     datasets: List[str] = []
     text_count: Optional[int] = None
 
-    class Config:
-        from_attributes = True
-        populate_by_name = True
+    model_config = {
+        "from_attributes": True,
+        "populate_by_name": True
+    }
 
 
 class ProjectUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
-    model_config: Optional[dict] = None
+    llm_config: Optional[dict] = None
     status: Optional[str] = None
