@@ -81,3 +81,16 @@ async def get_chunk_question_count(
     """获取特定分块的问题数量"""
     count = await QuestionService.get_chunk_question_count(db, project_id, text_id, chunk_index)
     return {"count": count}
+
+
+@router.post("/{question_id}/generate-answer", response_model=Question)
+async def generate_answer(
+    question_id: str,
+    db: Session = Depends(get_db)
+):
+    """为问题生成答案"""
+    question_service = QuestionService()  # 创建 QuestionService 实例
+    question = await question_service.generate_answer(db, question_id)
+    if not question:
+        raise HTTPException(status_code=404, detail="问题不存在")
+    return question

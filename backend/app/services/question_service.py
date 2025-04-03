@@ -7,6 +7,7 @@ from ..core.config import settings
 from backend.core.logger import logger
 import uuid
 from uuid import UUID
+from datetime import datetime
 
 
 class QuestionService:
@@ -26,6 +27,18 @@ class QuestionService:
             goal='从复杂文本中提取关键信息并生成可用于模型微调的结构化数据（仅生成问题）',
             backstory="""你是一位专业的文本分析专家
             擅长从复杂文本中提取关键信息并生成可用于模型微调的结构化数据（仅生成问题）。""",
+            verbose=True,
+            allow_delegation=False,
+            llm=self.question_llm
+        )
+
+    def create_answer_generator_agent(self) -> Agent:
+        """创建答案生成Agent"""
+        return Agent(
+            role='答案生成专家',
+            goal='根据问题和上下文生成准确、详细的答案',
+            backstory="""你是一位专业的答案生成专家，擅长根据问题和上下文生成准确、详细的答案。
+            你会确保答案准确、完整，并且易于理解。""",
             verbose=True,
             allow_delegation=False,
             llm=self.question_llm
@@ -86,6 +99,52 @@ class QuestionService:
             """
         )
 
+    def create_answer_task(self, agent: Agent, question: str, context: str) -> Task:
+        """创建答案生成任务"""
+        return Task(
+            description=f"""
+    # 角色使命
+    你是一位专业的答案生成专家，擅长根据问题和上下文生成准确、详细的答案。
+
+    ## 核心任务
+    根据提供的问题和上下文，生成一个准确、详细的答案。
+
+    ## 约束条件（重要！）
+    - 必须基于上下文内容生成答案
+    - 答案必须准确、完整
+    - 答案应该易于理解
+    - 答案应该包含必要的解释和说明
+    - 答案应该使用恰当的语言和表达方式
+
+    ## 处理流程
+    1. 【问题分析】理解问题的核心要求
+    2. 【上下文解析】从上下文中提取相关信息
+    3. 【答案生成】组织信息生成完整答案
+    4. 【质量检查】确保：
+       - 答案与问题强相关
+       - 答案内容准确
+       - 表达清晰易懂
+
+    ## 问题
+    {question}
+
+    ## 上下文
+    {context}
+
+    ## 限制
+    - 答案必须基于上下文内容
+    - 不要生成上下文之外的内容
+    - 答案要简洁明了，不要过于冗长
+    - 如果上下文中没有足够信息，请说明"根据上下文无法完整回答该问题"
+            """,
+            agent=agent,
+            expected_output="""
+                    ```json
+                    ["答案1", "答案2", "..."]
+                    ```
+                    """
+        )
+
     @staticmethod
     async def create_question(db: Session, question: QuestionCreate) -> Question:
         """创建问题"""
@@ -122,10 +181,11 @@ class QuestionService:
 
     @staticmethod
     async def get_question(db: Session, question_id: str) -> Optional[Question]:
-        db_question = db.query(QuestionModel).filter(QuestionModel.id == question_id).first()
-        if db_question:
-            return Question.model_validate(db_question)
-        return None
+        """获取问题详情"""
+        question = db.query(QuestionModel).filter(QuestionModel.id == question_id).first()
+        if not question:
+            return None
+        return Question.model_validate(question)
 
     @classmethod
     async def list_questions(
@@ -300,3 +360,75 @@ class QuestionService:
             QuestionModel.text_id == text_id,
             QuestionModel.chunk_index == chunk_index
         ).count()
+
+    async def generate_answer(self, db: Session, question_id: str) -> Optional[Question]:
+        """为问题生成答案
+        
+        Args:
+            db: 数据库会话
+            question_id: 问题ID
+            
+        Returns:
+            Optional[Question]: 更新后的问题对象
+        """
+        # 获取问题
+        question = db.query(QuestionModel).filter(QuestionModel.id == question_id).first()
+        if not question:
+            return None
+
+        # 获取问题所属的分块内容
+        chunks = db.query(ChunkModel).filter(
+            ChunkModel.text_id == question.text_id
+        ).order_by(ChunkModel.start_index).all()
+
+        if not chunks or question.chunk_index >= len(chunks):
+            raise ValueError("找不到问题所属的分块")
+
+        chunk = chunks[question.chunk_index]
+
+        try:
+            # 创建答案生成 Agent
+            agent = self.create_answer_generator_agent()
+            
+            # 创建任务
+            task = self.create_answer_task(agent, question.content, chunk.content)
+
+            # 创建 Crew 并执行任务
+            crew = Crew(
+                agents=[agent],
+                tasks=[task],
+                verbose=True
+            )
+
+            # 执行任务获取结果
+            result = crew.kickoff()
+            
+            # 更新问题的答案
+            question.answer = str(result)
+            question.question_metadata = {
+                **(question.question_metadata or {}),
+                "answer_generated": True,
+                "answer_generated_at": datetime.utcnow().isoformat()
+            }
+            
+            db.commit()
+            db.refresh(question)
+            
+            # 转换为 Pydantic 模型
+            return Question.model_validate({
+                "id": question.id,
+                "content": question.content,
+                "answer": question.answer,
+                "project_id": question.project_id,
+                "text_id": question.text_id,
+                "chunk_index": question.chunk_index,
+                "metadata": question.question_metadata if question.question_metadata else {},
+                "created_at": question.created_at.isoformat() if question.created_at else None,
+                "updated_at": question.updated_at.isoformat() if question.updated_at else None,
+                "status": "active",
+                "tags": []
+            })
+
+        except Exception as e:
+            logger.error(f"生成答案时发生错误: {str(e)}")
+            raise ValueError(f"生成答案失败: {str(e)}")

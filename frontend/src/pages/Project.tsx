@@ -294,6 +294,15 @@ export default function Project() {
   const [savingQuestion, setSavingQuestion] = useState(false);
   const [chunkQuestions, setChunkQuestions] = useState<Question[]>([]);
   const [highlightedQuestionId, setHighlightedQuestionId] = useState<string | null>(null);
+  const [openGenerateAnswer, setOpenGenerateAnswer] = useState(false);
+  const [generatingAnswerQuestion, setGeneratingAnswerQuestion] = useState<Question | null>(null);
+  const [answerGenerateProgress, setAnswerGenerateProgress] = useState({
+    isOpen: false,
+    status: 'processing' as 'processing' | 'success' | 'error',
+    message: ''
+  });
+  const [openDeleteQuestion, setOpenDeleteQuestion] = useState(false);
+  const [deletingQuestion, setDeletingQuestion] = useState<Question | null>(null);
 
   // 获取当前 tab
   const currentTab = location.pathname.split('/').pop() || 'texts';
@@ -448,6 +457,7 @@ export default function Project() {
             await fetchTexts();
             break;
           case 'questions':
+            await fetchTexts();
             await fetchQuestions();
             break;
           case 'datasets':
@@ -876,6 +886,9 @@ export default function Project() {
           message: '问题生成完成'
         }
       }));
+
+      // 刷新分块问题列表
+      await fetchChunkQuestions(selectedFile.id, state.selectedChunkIndex);
       
       setOpenGenerateQuestions(false);
       setSelectedTextId(null);
@@ -966,6 +979,11 @@ export default function Project() {
               }))
             }
           }));
+
+          // 如果当前分块是选中的分块，刷新分块问题列表
+          if (state.selectedChunkIndex === chunkIndex) {
+            await fetchChunkQuestions(selectedFile.id, chunkIndex);
+          }
         } catch (error: any) {
           console.error(`Error generating questions for chunk ${chunkIndex}:`, error);
           failedChunks.push({
@@ -1076,21 +1094,6 @@ export default function Project() {
     return state.selectedChunks.length > 0 && state.selectedChunks.length < state.selectedFile.chunks.length;
   };
 
-  // 当筛选条件或页码改变时重新获取问题列表
-  useEffect(() => {
-    if (currentTab === 'questions') {
-      fetchQuestions();
-    }
-  }, [projectId, selectedTextId, selectedChunkIndex, page, pageSize, currentTab]);
-
-  // 当切换到问题列表标签时加载数据
-  useEffect(() => {
-    if (currentTab === 'questions') {
-      fetchTexts();
-      fetchQuestions();
-    }
-  }, [currentTab]);
-
   // 当选择文件时获取分块列表
   useEffect(() => {
     if (selectedTextId) {
@@ -1155,11 +1158,20 @@ export default function Project() {
     }
   };
 
-  const handleDeleteQuestion = async (question: any) => {
+  const handleDeleteQuestion = async (question: Question) => {
+    setDeletingQuestion(question);
+    setOpenDeleteQuestion(true);
+  };
+
+  const handleConfirmDeleteQuestion = async () => {
+    if (!deletingQuestion) return;
+    
     try {
-      await axios.delete(`/api/questions/${question.id}`);
+      await axios.delete(`/api/questions/delete?question_id=${deletingQuestion.id}`);
       // 刷新问题列表
       fetchQuestions();
+      setOpenDeleteQuestion(false);
+      setDeletingQuestion(null);
     } catch (error) {
       console.error('删除问题失败:', error);
       setError('删除问题失败');
@@ -1173,6 +1185,50 @@ export default function Project() {
     setSelectedChunkIndex(question.chunk_index);
     setHighlightedQuestionId(question.id);
     setPage(1);
+  };
+
+  // 当筛选条件或页码改变时重新获取问题列表
+  useEffect(() => {
+    if (currentTab === 'questions') {
+      fetchQuestions();
+    }
+  }, [selectedTextId, selectedChunkIndex, page, pageSize]);
+
+  // 修改生成答案的处理函数
+  const handleGenerateAnswer = async (question: Question) => {
+    setGeneratingAnswerQuestion(question);
+    setOpenGenerateAnswer(true);
+  };
+
+  const handleConfirmGenerateAnswer = async () => {
+    if (!generatingAnswerQuestion) return;
+
+    try {
+      setOpenGenerateAnswer(false);
+      setAnswerGenerateProgress({
+        isOpen: true,
+        status: 'processing',
+        message: '正在生成答案...'
+      });
+
+      await axios.post(`/api/questions/${generatingAnswerQuestion.id}/generate-answer`);
+      
+      // 刷新问题列表
+      await fetchQuestions();
+      
+      setAnswerGenerateProgress({
+        isOpen: true,
+        status: 'success',
+        message: '答案生成成功'
+      });
+    } catch (error: any) {
+      console.error('生成答案失败:', error);
+      setAnswerGenerateProgress({
+        isOpen: true,
+        status: 'error',
+        message: error.response?.data?.detail || '生成答案失败'
+      });
+    }
   };
 
   if (loading) {
@@ -1366,7 +1422,7 @@ export default function Project() {
                             <TableCell>问题</TableCell>
                             <TableCell>创建时间</TableCell>
                             <TableCell>归属标签</TableCell>
-                            <TableCell>思维链</TableCell>
+                            <TableCell sx={{ minWidth: '120px' }}>思维链</TableCell>
                             <TableCell>回答</TableCell>
                             <TableCell>操作</TableCell>
                           </TableRow>
@@ -1393,11 +1449,22 @@ export default function Project() {
                               <TableCell>{question.content}</TableCell>
                               <TableCell>{new Date(question.created_at).toLocaleString()}</TableCell>
                               <TableCell>
-                                <Chip
-                                  label={question.metadata?.type || '未分类'}
-                                  size="small"
-                                  color="primary"
-                                />
+                                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                  {/* 所属文件标签 */}
+                                  <Chip
+                                    label={texts.find(text => text.id === question.text_id)?.title || '未知文件'}
+                                    size="small"
+                                    color="info"
+                                    variant="outlined"
+                                  />
+                                  {/* 所属分块标签 */}
+                                  <Chip
+                                    label={`分块 ${question.chunk_index + 1}`}
+                                    size="small"
+                                    color="default"
+                                    variant="outlined"
+                                  />
+                                </Box>
                               </TableCell>
                               <TableCell>
                                 <Typography color="text.secondary">
@@ -1426,6 +1493,17 @@ export default function Project() {
                                     }}
                                   >
                                     <EditIcon />
+                                  </IconButton>
+                                  <IconButton 
+                                    size="small"
+                                    color="primary"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleGenerateAnswer(question);
+                                    }}
+                                    disabled={state.loading}
+                                  >
+                                    <QuestionIcon />
                                   </IconButton>
                                   <IconButton 
                                     size="small" 
@@ -2187,6 +2265,114 @@ export default function Project() {
             }}
           >
             {state.generateProgress.status === 'processing' ? '取消' : '关闭'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={openGenerateAnswer}
+        onClose={() => setOpenGenerateAnswer(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>生成答案</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ mt: 2 }}>确定要为以下问题生成答案吗？</Typography>
+          <Typography 
+            variant="body2" 
+            sx={{ 
+              mt: 2,
+              p: 2,
+              bgcolor: 'grey.100',
+              borderRadius: 1
+            }}
+          >
+            {generatingAnswerQuestion?.content}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenGenerateAnswer(false)}>取消</Button>
+          <Button
+            onClick={handleConfirmGenerateAnswer}
+            variant="contained"
+          >
+            生成答案
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={answerGenerateProgress.isOpen}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>生成答案</DialogTitle>
+        <DialogContent>
+          {answerGenerateProgress.status === 'processing' && (
+            <Box sx={{ mt: 2 }}>
+              <LinearProgress />
+              <Typography sx={{ mt: 2 }}>
+                正在生成答案，请稍候...
+              </Typography>
+            </Box>
+          )}
+          {answerGenerateProgress.status === 'success' && (
+            <Box sx={{ mt: 2 }}>
+              <Alert severity="success" sx={{ mb: 2 }}>
+                {answerGenerateProgress.message}
+              </Alert>
+            </Box>
+          )}
+          {answerGenerateProgress.status === 'error' && (
+            <Box sx={{ mt: 2 }}>
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {answerGenerateProgress.message}
+              </Alert>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => {
+              setAnswerGenerateProgress(prev => ({ ...prev, isOpen: false }));
+              setGeneratingAnswerQuestion(null);
+            }}
+            disabled={answerGenerateProgress.status === 'processing'}
+          >
+            {answerGenerateProgress.status === 'processing' ? '生成中...' : '关闭'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={openDeleteQuestion}
+        onClose={() => setOpenDeleteQuestion(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>删除问题</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ mt: 2 }}>确定要删除以下问题吗？此操作不可撤销。</Typography>
+          <Typography 
+            variant="body2" 
+            sx={{ 
+              mt: 2,
+              p: 2,
+              bgcolor: 'grey.100',
+              borderRadius: 1
+            }}
+          >
+            {deletingQuestion?.content}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenDeleteQuestion(false)}>取消</Button>
+          <Button
+            onClick={handleConfirmDeleteQuestion}
+            color="error"
+            variant="contained"
+          >
+            删除
           </Button>
         </DialogActions>
       </Dialog>
