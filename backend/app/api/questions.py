@@ -45,7 +45,39 @@ async def delete_question(question_id: str = Query(..., description="问题ID"),
     return {"message": "删除成功"}
 
 
-@router.get("/list", response_model=List[Question])
-async def list_project_questions(project_id: str = Query(..., description="项目ID"), db: Session = Depends(get_db)):
-    """获取项目下的所有问题"""
-    return await QuestionService.list_questions(db, project_id)
+@router.get("/list")
+async def list_questions(
+    project_id: str = Query(..., description="项目ID"),
+    text_id: str | None = Query(None, description="文件ID"),
+    chunk_index: int | None = Query(None, description="分块索引"),
+    page: int = Query(1, description="页码"),
+    page_size: int = Query(10, description="每页数量"),
+    db: Session = Depends(get_db)
+):
+    """获取问题列表"""
+    questions, total = await QuestionService.list_questions(
+        db, 
+        project_id=project_id,
+        text_id=text_id,
+        chunk_index=chunk_index,
+        page=page,
+        page_size=page_size
+    )
+    return {
+        "items": questions,
+        "total": total,
+        "page": page,
+        "page_size": page_size
+    }
+
+
+@router.get("/count")
+async def get_chunk_question_count(
+    project_id: str = Query(..., description="项目ID"),
+    text_id: str = Query(..., description="文本ID"),
+    chunk_index: int = Query(..., description="分块索引"),
+    db: Session = Depends(get_db)
+):
+    """获取特定分块的问题数量"""
+    count = await QuestionService.get_chunk_question_count(db, project_id, text_id, chunk_index)
+    return {"count": count}

@@ -1,8 +1,9 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON, Text as SQLAlchemyText
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON, Text as SQLAlchemyText, UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 import uuid
+from sqlalchemy.sql import func
 
 Base = declarative_base()
 
@@ -62,14 +63,14 @@ class Question(Base):
     __tablename__ = "questions"
 
     id = Column(String, primary_key=True)
-    content = Column(SQLAlchemyText, nullable=False)
-    answer = Column(SQLAlchemyText, nullable=False)
-    question_metadata = Column(JSON)
-    project_id = Column(String, ForeignKey("projects.id", ondelete="CASCADE"))
-    text_id = Column(String, ForeignKey("texts.id", ondelete="CASCADE"))
+    content = Column(String, nullable=False)
+    answer = Column(String, nullable=False)
+    project_id = Column(String, ForeignKey("projects.id"), nullable=False)
+    text_id = Column(String, ForeignKey("texts.id"), nullable=False)
     chunk_index = Column(Integer, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    question_metadata = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # 关联关系
     project = relationship("Project", back_populates="questions")

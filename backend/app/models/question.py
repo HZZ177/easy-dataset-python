@@ -1,14 +1,16 @@
-from pydantic import BaseModel
-from typing import List, Optional
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Any
 from datetime import datetime
+from uuid import UUID
 
 
 class QuestionBase(BaseModel):
     content: str
-    project_id: str
-    text_id: str
+    answer: str
+    project_id: str = Field(..., description="项目ID")
+    text_id: str = Field(..., description="文本ID")
     chunk_index: int
-    metadata: Optional[dict] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 class QuestionCreate(QuestionBase):
@@ -17,21 +19,18 @@ class QuestionCreate(QuestionBase):
 
 class Question(QuestionBase):
     id: str
-    created_at: datetime
-    updated_at: datetime
-    answer: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     status: str = "active"
     tags: List[str] = []
 
-    model_config = {
-        "from_attributes": True,
-        "populate_by_name": True
-    }
+    class Config:
+        from_attributes = True
 
 
 class QuestionUpdate(BaseModel):
     content: Optional[str] = None
     answer: Optional[str] = None
-    metadata: Optional[dict] = None
+    metadata: Optional[Dict[str, Any]] = None
     status: Optional[str] = None
     tags: Optional[List[str]] = None
