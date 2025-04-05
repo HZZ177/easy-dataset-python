@@ -36,6 +36,7 @@ import {
   TableBody,
   TableRow,
   TableCell,
+  Tooltip,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -52,6 +53,7 @@ import LoadingState from '../components/LoadingState';
 import ErrorState from '../components/ErrorState';
 import ProjectNav from '../components/ProjectNav';
 import DatasetCard from '../components/DatasetCard';
+import ErrorSnackbar from '../components/ErrorSnackbar';
 
 interface Project {
   id: string;
@@ -298,11 +300,24 @@ export default function Project() {
   const [generatingAnswerQuestion, setGeneratingAnswerQuestion] = useState<Question | null>(null);
   const [answerGenerateProgress, setAnswerGenerateProgress] = useState({
     isOpen: false,
-    status: 'processing' as 'processing' | 'success' | 'error',
-    message: ''
+    status: 'processing' as 'processing' | 'success' | 'error' | 'cancelling' | 'cancelled',
+    message: '',
+    current: 0,
+    total: 0
   });
   const [openDeleteQuestion, setOpenDeleteQuestion] = useState(false);
   const [deletingQuestion, setDeletingQuestion] = useState<Question | null>(null);
+  const [openBatchDeleteQuestions, setOpenBatchDeleteQuestions] = useState(false);
+  const [errorSnackbar, setErrorSnackbar] = useState({
+    open: false,
+    message: ''
+  });
+  const [openViewChunkContent, setOpenViewChunkContent] = useState(false);
+  const [viewingChunkContent, setViewingChunkContent] = useState<{
+    textId: string;
+    chunkIndex: number;
+    content: string;
+  } | null>(null);
 
   // 获取当前 tab
   const currentTab = location.pathname.split('/').pop() || 'texts';
@@ -449,7 +464,39 @@ export default function Project() {
       try {
         // 如果是数据集页面，需要同时加载文本列表
         if (currentTab === 'datasets') {
-          await fetchTexts();
+          // 如果当前有选中的文件，只刷新其所有分块的问题数量
+          if (state.selectedFile) {
+            const chunksWithQuestionCount = await Promise.all(
+              state.selectedFile.chunks.map(async (chunk, index) => {
+                try {
+                  const questionResponse = await axios.get(`/api/projects/${projectId}/texts/${state.selectedFile!.id}/chunk/${index}/questions/count`);
+                  return {
+                    ...chunk,
+                    question_count: questionResponse.data.count
+                  };
+                } catch (error) {
+                  console.error(`Error fetching question count for chunk ${index}:`, error);
+                  return {
+                    ...chunk,
+                    question_count: 0
+                  };
+                }
+              })
+            );
+            
+            setState(prev => ({
+              ...prev,
+              selectedFile: {
+                ...prev.selectedFile!,
+                chunks: chunksWithQuestionCount
+              }
+            }));
+
+            // 如果当前有选中的分块，刷新该分块的问题列表
+            if (state.selectedChunkIndex !== null) {
+              await fetchChunkQuestions(state.selectedFile.id, state.selectedChunkIndex);
+            }
+          }
         }
         
         switch (currentTab) {
@@ -843,68 +890,48 @@ export default function Project() {
 
   const handleGenerateQuestions = async () => {
     if (!state.selectedFile || state.selectedChunkIndex === null) return;
-
-    setState(prev => ({ 
-      ...prev, 
-      loading: true,
-      generateProgress: {
-        current: 0,
-        total: 1,
-        isOpen: true,
-        status: 'processing',
-        isCancelled: false,
-        message: '正在生成问题...'
-      }
-    }));
-    setError(null);
-
+    
     try {
-      const selectedFile = state.selectedFile;
-      await axios.post(`/api/projects/${projectId}/texts/${selectedFile.id}/chunk/${state.selectedChunkIndex}/generate-questions`);
-      
-      // 刷新问题列表
-      await fetchQuestions();
-      
-      // 获取最新的问题数量
-      const questionCountResponse = await axios.get(`/api/projects/${projectId}/texts/${selectedFile.id}/chunk/${state.selectedChunkIndex}/questions/count`);
-      const questionCount = questionCountResponse.data.count;
-      
-      // 更新分块的问题数量
       setState(prev => ({
         ...prev,
-        selectedFile: {
-          ...selectedFile,
-          chunks: selectedFile.chunks.map((chunk, index) => 
-            index === state.selectedChunkIndex
-              ? { ...chunk, question_count: questionCount }
-              : chunk
-          )
-        },
+        generateProgress: {
+          ...prev.generateProgress,
+          status: 'processing',
+          current: 0,
+          total: 1
+        }
+      }));
+      setOpenGenerateQuestions(false);
+      
+      const response = await axios.post(
+        `/api/projects/${projectId}/texts/${state.selectedFile.id}/chunk/${state.selectedChunkIndex}/generate-questions`
+      );
+      
+      if (!response.data.success) {
+        throw new Error(response.data.error || '生成问题失败');
+      }
+      
+      setState(prev => ({
+        ...prev,
         generateProgress: {
           ...prev.generateProgress,
           status: 'success',
-          message: '问题生成完成'
+          current: 1,
+          total: 1
         }
       }));
-
-      // 刷新分块问题列表
-      await fetchChunkQuestions(selectedFile.id, state.selectedChunkIndex);
-      
-      setOpenGenerateQuestions(false);
-      setSelectedTextId(null);
-    } catch (error: any) {
-      console.error('生成问题失败:', error);
-      setError(error.response?.data?.detail || error.message || '生成问题失败');
-      setState(prev => ({ 
-        ...prev, 
+      await fetchQuestions();
+    } catch (error) {
+      handleError(error);
+      setState(prev => ({
+        ...prev,
         generateProgress: {
           ...prev.generateProgress,
           status: 'error',
-          message: '生成过程中出现错误'
+          current: 0,
+          total: 1
         }
       }));
-    } finally {
-      setState(prev => ({ ...prev, loading: false }));
     }
   };
 
@@ -945,7 +972,7 @@ export default function Project() {
 
         try {
           const response = await axios.post(`/api/projects/${projectId}/texts/${selectedFile.id}/chunk/${chunkIndex}/generate-questions`);
-          if (response.data.error) {
+          if (!response.data.success) {
             throw new Error(response.data.error);
           }
           
@@ -979,70 +1006,70 @@ export default function Project() {
               }))
             }
           }));
-
-          // 如果当前分块是选中的分块，刷新分块问题列表
-          if (state.selectedChunkIndex === chunkIndex) {
-            await fetchChunkQuestions(selectedFile.id, chunkIndex);
-          }
         } catch (error: any) {
-          console.error(`Error generating questions for chunk ${chunkIndex}:`, error);
+          console.error(`生成分块 ${chunkIndex} 的问题失败:`, error);
           failedChunks.push({
             index: chunkIndex,
-            error: error.response?.data?.detail || error.message || '未知错误'
+            error: error.response?.data?.error || error.message || '生成问题失败'
           });
+          // 即使失败也更新进度
+          completedChunks++;
+          setState(prev => ({
+            ...prev,
+            generateProgress: {
+              ...prev.generateProgress,
+              current: completedChunks,
+              message: `正在生成问题...(${completedChunks}/${state.selectedChunks.length})`
+            }
+          }));
         }
       }
 
-      // 如果被取消，显示取消信息
-      if (isCancelledRef.current) {
+      // 更新最终状态
+      if (failedChunks.length > 0) {
         setState(prev => ({
           ...prev,
-          loading: false,
-          selectedChunks: [], // 重置选中状态
+          generateProgress: {
+            ...prev.generateProgress,
+            status: 'error',
+            message: `部分分块生成失败：\n${failedChunks.map(f => `分块 ${f.index + 1}: ${f.error}`).join('\n')}`
+          },
+          selectedChunks: [] // 清空复选框
+        }));
+      } else if (isCancelledRef.current) {
+        setState(prev => ({
+          ...prev,
           generateProgress: {
             ...prev.generateProgress,
             status: 'cancelled',
-            message: `已取消生成。成功生成 ${completedChunks} 个分块的问题，${failedChunks.length} 个分块失败。`
-          }
+            message: `已取消生成，完成了 ${completedChunks} 个分块的问题生成`
+          },
+          selectedChunks: [] // 清空复选框
         }));
       } else {
-        // 生成完成，显示成功和失败信息
-        await fetchDatasets();
-        
         setState(prev => ({
           ...prev,
-          loading: false,
-          selectedChunks: [], // 重置选中状态
           generateProgress: {
             ...prev.generateProgress,
-            status: failedChunks.length > 0 ? 'partial' : 'success',
-            message: failedChunks.length > 0
-              ? `部分生成完成。成功生成 ${completedChunks} 个分块的问题，${failedChunks.length} 个分块失败。`
-              : '所有分块的问题生成完成'
-          }
+            status: 'success',
+            message: `所有分块的问题生成完成，共生成 ${completedChunks} 个分块的问题`
+          },
+          selectedChunks: [] // 清空复选框
         }));
-
-        // 如果有失败的分块，显示详细错误信息
-        if (failedChunks.length > 0) {
-          setError(
-            `以下分块生成失败：\n${failedChunks
-              .map(chunk => `分块 ${chunk.index + 1}: ${chunk.error}`)
-              .join('\n')}`
-          );
-        }
       }
     } catch (error: any) {
       console.error('批量生成问题失败:', error);
-      setError(error.response?.data?.detail || error.message || '批量生成问题失败');
       setState(prev => ({ 
         ...prev, 
-        loading: false,
         generateProgress: {
           ...prev.generateProgress,
           status: 'error',
-          message: '生成过程中出现错误'
-        }
+          message: error.response?.data?.error || error.message || '批量生成问题失败'
+        },
+        selectedChunks: [] // 清空复选框
       }));
+    } finally {
+      setState(prev => ({ ...prev, loading: false }));
     }
   };
 
@@ -1208,10 +1235,16 @@ export default function Project() {
       setAnswerGenerateProgress({
         isOpen: true,
         status: 'processing',
-        message: '正在生成答案...'
+        message: '正在生成答案...',
+        current: 0,
+        total: 1
       });
 
-      await axios.post(`/api/questions/${generatingAnswerQuestion.id}/generate-answer`);
+      const response = await axios.post(`/api/questions/${generatingAnswerQuestion.id}/generate-answer`);
+      
+      if (!response.data.success) {
+        throw new Error(response.data.error);
+      }
       
       // 刷新问题列表
       await fetchQuestions();
@@ -1219,15 +1252,161 @@ export default function Project() {
       setAnswerGenerateProgress({
         isOpen: true,
         status: 'success',
-        message: '答案生成成功'
+        message: '答案生成成功',
+        current: 1,
+        total: 1
       });
     } catch (error: any) {
       console.error('生成答案失败:', error);
       setAnswerGenerateProgress({
         isOpen: true,
         status: 'error',
-        message: error.response?.data?.detail || '生成答案失败'
+        message: error.response?.data?.error || error.message || '生成答案失败',
+        current: 0,
+        total: 1
       });
+    }
+  };
+
+  // 添加批量生成答案的处理函数
+  const handleBatchGenerateAnswers = async () => {
+    if (selectedQuestions.length === 0) return;
+
+    // 重置取消状态
+    isCancelledRef.current = false;
+
+    setAnswerGenerateProgress({
+      isOpen: true,
+      status: 'processing',
+      message: `正在生成答案... (0/${selectedQuestions.length})`,
+      current: 0,
+      total: selectedQuestions.length
+    });
+
+    let completedCount = 0;
+    const failedQuestions: { id: string; error: string }[] = [];
+
+    for (const questionId of selectedQuestions) {
+      // 检查是否被取消
+      if (isCancelledRef.current) {
+        break;
+      }
+
+      try {
+        const response = await axios.post(`/api/questions/${questionId}/generate-answer`);
+        
+        if (!response.data.success) {
+          throw new Error(response.data.error);
+        }
+
+        completedCount++;
+        setAnswerGenerateProgress(prev => ({
+          ...prev,
+          current: completedCount,
+          message: `正在生成答案... (${completedCount}/${selectedQuestions.length})`
+        }));
+      } catch (error: any) {
+        console.error(`生成问题 ${questionId} 的答案失败:`, error);
+        failedQuestions.push({
+          id: questionId,
+          error: error.response?.data?.error || error.message || '生成答案失败'
+        });
+        // 即使失败也更新进度
+        completedCount++;
+        setAnswerGenerateProgress(prev => ({
+          ...prev,
+          current: completedCount,
+          message: `正在生成答案... (${completedCount}/${selectedQuestions.length})`
+        }));
+      }
+    }
+
+    // 更新最终状态
+    if (failedQuestions.length > 0) {
+      setAnswerGenerateProgress({
+        isOpen: true,
+        status: 'error',
+        message: `部分问题生成答案失败：\n${failedQuestions.map(f => `问题 ${f.id}: ${f.error}`).join('\n')}`,
+        current: completedCount,
+        total: selectedQuestions.length
+      });
+      // 清空复选框
+      setSelectedQuestions([]);
+    } else if (isCancelledRef.current) {
+      setAnswerGenerateProgress({
+        isOpen: true,
+        status: 'cancelled',
+        message: `已取消生成，完成了 ${completedCount} 个问题的答案生成`,
+        current: completedCount,
+        total: selectedQuestions.length
+      });
+      // 清空复选框
+      setSelectedQuestions([]);
+    } else {
+      setAnswerGenerateProgress({
+        isOpen: true,
+        status: 'success',
+        message: `所有答案生成完成，共生成 ${completedCount} 个答案`,
+        current: completedCount,
+        total: selectedQuestions.length
+      });
+      // 清空复选框
+      setSelectedQuestions([]);
+    }
+
+    // 刷新问题列表
+    await fetchQuestions();
+  };
+
+  const handleBatchDeleteQuestions = async () => {
+    try {
+      await axios.post(`/api/questions/batch-delete`, {
+        question_ids: selectedQuestions
+      });
+      
+      await fetchQuestions();
+      setSelectedQuestions([]);
+      setOpenBatchDeleteQuestions(false);
+    } catch (error) {
+      handleError(error);
+      setOpenBatchDeleteQuestions(false); // 出现错误时自动关闭弹窗
+    }
+  };
+
+  const handleError = (error: any) => {
+    console.error('操作失败:', error);
+    const errorMessage = error.response?.data?.detail || error.message || '操作失败';
+    setErrorSnackbar({
+      open: true,
+      message: errorMessage
+    });
+  };
+
+  const handleCloseErrorSnackbar = () => {
+    setErrorSnackbar(prev => ({ ...prev, open: false }));
+  };
+
+  // 添加查看分块内容的函数
+  const handleViewChunkContent = async (question: Question) => {
+    try {
+      // 获取分块内容
+      const response = await axios.get(`/api/texts/chunks`, {
+        params: {
+          text_id: question.text_id
+        }
+      });
+      
+      const chunkContent = response.data[question.chunk_index].content;
+      
+      setViewingChunkContent({
+        textId: question.text_id,
+        chunkIndex: question.chunk_index,
+        content: chunkContent
+      });
+      setOpenViewChunkContent(true);
+    } catch (error) {
+      console.error('获取分块内容失败:', error);
+      setError('获取分块内容失败');
     }
   };
 
@@ -1244,7 +1423,12 @@ export default function Project() {
   }
 
   return (
-    <Box>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+      <ErrorSnackbar
+        open={errorSnackbar.open}
+        message={errorSnackbar.message}
+        onClose={handleCloseErrorSnackbar}
+      />
       <ProjectNav currentProjectId={projectId} refreshTrigger={refreshTrigger} />
       
       <Box sx={{ p: 3 }}>
@@ -1346,6 +1530,33 @@ export default function Project() {
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
                   <Typography variant="h5">问题列表</Typography>
                   <Box>
+                    <Button 
+                      variant="contained" 
+                      startIcon={<AddIcon />}
+                      onClick={() => {
+                        if (selectedQuestions.length > 0) {
+                          handleBatchGenerateAnswers();
+                        }
+                      }}
+                      disabled={selectedQuestions.length === 0}
+                      sx={{ mr: 1 }}
+                    >
+                      批量生成答案
+                    </Button>
+                    <Button 
+                      variant="contained" 
+                      color="error"
+                      startIcon={<DeleteIcon />}
+                      onClick={() => {
+                        if (selectedQuestions.length > 0) {
+                          setOpenBatchDeleteQuestions(true);
+                        }
+                      }}
+                      disabled={selectedQuestions.length === 0}
+                      sx={{ mr: 1 }}
+                    >
+                      批量删除
+                    </Button>
                     <Button variant="contained" startIcon={<AddIcon />}>
                       创建问题
                     </Button>
@@ -1412,19 +1623,19 @@ export default function Project() {
                       <Table>
                         <TableHead>
                           <TableRow>
-                            <TableCell padding="checkbox">
+                            <TableCell padding="checkbox" align="center">
                               <Checkbox
                                 checked={questions.length > 0 && selectedQuestions.length === questions.length}
                                 indeterminate={selectedQuestions.length > 0 && selectedQuestions.length < questions.length}
                                 onChange={handleSelectAllQuestions}
                               />
                             </TableCell>
-                            <TableCell>问题</TableCell>
-                            <TableCell>创建时间</TableCell>
-                            <TableCell>归属标签</TableCell>
-                            <TableCell sx={{ minWidth: '120px' }}>思维链</TableCell>
-                            <TableCell>回答</TableCell>
-                            <TableCell>操作</TableCell>
+                            <TableCell align="center">问题</TableCell>
+                            <TableCell align="center">创建时间</TableCell>
+                            <TableCell align="center">归属标签</TableCell>
+                            <TableCell align="center" sx={{ minWidth: '120px' }}>思维链</TableCell>
+                            <TableCell align="center">回答</TableCell>
+                            <TableCell align="center">操作</TableCell>
                           </TableRow>
                         </TableHead>
                         <TableBody>
@@ -1485,36 +1696,53 @@ export default function Project() {
                               </TableCell>
                               <TableCell>
                                 <Box sx={{ display: 'flex', gap: 1 }}>
-                                  <IconButton 
-                                    size="small" 
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleEditQuestion(question);
-                                    }}
-                                  >
-                                    <EditIcon />
-                                  </IconButton>
-                                  <IconButton 
-                                    size="small"
-                                    color="primary"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleGenerateAnswer(question);
-                                    }}
-                                    disabled={state.loading}
-                                  >
-                                    <QuestionIcon />
-                                  </IconButton>
-                                  <IconButton 
-                                    size="small" 
-                                    color="error" 
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDeleteQuestion(question);
-                                    }}
-                                  >
-                                    <DeleteIcon />
-                                  </IconButton>
+                                  <Tooltip title="编辑问题" arrow>
+                                    <IconButton 
+                                      size="small" 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleEditQuestion(question);
+                                      }}
+                                    >
+                                      <EditIcon />
+                                    </IconButton>
+                                  </Tooltip>
+                                  <Tooltip title="生成答案" arrow>
+                                    <IconButton 
+                                      size="small"
+                                      color="primary"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleGenerateAnswer(question);
+                                      }}
+                                      disabled={state.loading}
+                                    >
+                                      <QuestionIcon />
+                                    </IconButton>
+                                  </Tooltip>
+                                  <Tooltip title="查看分块内容" arrow>
+                                    <IconButton 
+                                      size="small"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleViewChunkContent(question);
+                                      }}
+                                    >
+                                      <VisibilityIcon />
+                                    </IconButton>
+                                  </Tooltip>
+                                  <Tooltip title="删除问题" arrow>
+                                    <IconButton 
+                                      size="small" 
+                                      color="error" 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteQuestion(question);
+                                      }}
+                                    >
+                                      <DeleteIcon />
+                                    </IconButton>
+                                  </Tooltip>
                                 </Box>
                               </TableCell>
                             </TableRow>
@@ -2192,7 +2420,7 @@ export default function Project() {
           {state.generateProgress.status === 'processing' && (
             <>
               <LinearProgress sx={{ mt: 1 }} />
-              <Typography sx={{ mt: 2 }}>
+              <Typography>
                 正在生成第 {state.generateProgress.current + 1} 个分块的问题，共 {state.generateProgress.total} 个
               </Typography>
               <Typography color="text.secondary" sx={{ mt: 1 }}>
@@ -2223,23 +2451,36 @@ export default function Project() {
               </Typography>
             </Box>
           )}
+          {state.generateProgress.status === 'error' && (
+            <Box sx={{ mt: 2 }}>
+              <Box sx={{ 
+                backgroundColor: '#fdeded', 
+                color: '#d32f2f',
+                padding: 2,
+                borderRadius: 1,
+                mb: 2
+              }}>
+                <Typography sx={{ 
+                  whiteSpace: 'pre-wrap',
+                  fontFamily: 'monospace',
+                  fontSize: '0.875rem',
+                  lineHeight: 1.4
+                }}>
+                  {state.generateProgress.message}
+                </Typography>
+              </Box>
+              <Typography>
+                问题生成失败，请检查报错信息后重试
+              </Typography>
+            </Box>
+          )}
           {state.generateProgress.status === 'success' && (
             <Box sx={{ mt: 2 }}>
               <Alert severity="success" sx={{ mb: 2 }}>
                 {state.generateProgress.message}
               </Alert>
               <Typography>
-                已成功生成 {state.generateProgress.total} 个分块的问题
-              </Typography>
-            </Box>
-          )}
-          {state.generateProgress.status === 'error' && (
-            <Box sx={{ mt: 2 }}>
-              <Alert severity="error" sx={{ mb: 2 }}>
-                {state.generateProgress.message}
-              </Alert>
-              <Typography>
-                已完成 {state.generateProgress.current} 个分块，共 {state.generateProgress.total} 个
+                问题生成完成，共生成 {state.generateProgress.current} 个分块的问题
               </Typography>
             </Box>
           )}
@@ -2248,9 +2489,7 @@ export default function Project() {
           <Button
             onClick={() => {
               if (state.generateProgress.status === 'processing') {
-                // 立即设置取消状态
                 isCancelledRef.current = true;
-                // 立即更新状态为取消中
                 setState(prev => ({
                   ...prev,
                   generateProgress: {
@@ -2305,14 +2544,68 @@ export default function Project() {
         open={answerGenerateProgress.isOpen}
         maxWidth="sm"
         fullWidth
+        onClose={() => {
+          if (answerGenerateProgress.status !== 'processing') {
+            setAnswerGenerateProgress(prev => ({ ...prev, isOpen: false }));
+          }
+        }}
       >
         <DialogTitle>生成答案</DialogTitle>
         <DialogContent>
           {answerGenerateProgress.status === 'processing' && (
+            <>
+              <LinearProgress sx={{ mt: 1 }} />
+              <Typography>
+                正在生成第 {answerGenerateProgress.current + 1} 个问题的答案，共 {answerGenerateProgress.total} 个
+              </Typography>
+              <Typography color="text.secondary" sx={{ mt: 1 }}>
+                注意：开始批量生成后，点击取消按钮无法取消正在生成的答案，只能停止后续答案的生成
+              </Typography>
+            </>
+          )}
+          {answerGenerateProgress.status === 'cancelling' && (
+            <>
+              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mt: 2 }}>
+                <CircularProgress size={40} sx={{ mb: 2 }} />
+                <Typography>
+                  正在取消批量生成...
+                </Typography>
+                <Typography color="text.secondary" sx={{ mt: 1 }}>
+                  请等待当前问题生成完成
+                </Typography>
+              </Box>
+            </>
+          )}
+          {answerGenerateProgress.status === 'cancelled' && (
             <Box sx={{ mt: 2 }}>
-              <LinearProgress />
-              <Typography sx={{ mt: 2 }}>
-                正在生成答案，请稍候...
+              <Alert severity="info" sx={{ mb: 2 }}>
+                {answerGenerateProgress.message}
+              </Alert>
+              <Typography>
+                已取消生成，完成了 {answerGenerateProgress.current} 个问题的答案生成
+              </Typography>
+            </Box>
+          )}
+          {answerGenerateProgress.status === 'error' && (
+            <Box sx={{ mt: 2 }}>
+              <Box sx={{ 
+                backgroundColor: '#fdeded', 
+                color: '#d32f2f',
+                padding: 2,
+                borderRadius: 1,
+                mb: 2
+              }}>
+                <Typography sx={{ 
+                  whiteSpace: 'pre-wrap',
+                  fontFamily: 'monospace',
+                  fontSize: '0.875rem',
+                  lineHeight: 1.4
+                }}>
+                  {answerGenerateProgress.message}
+                </Typography>
+              </Box>
+              <Typography>
+                问题生成失败，请检查报错信息后重试
               </Typography>
             </Box>
           )}
@@ -2321,25 +2614,28 @@ export default function Project() {
               <Alert severity="success" sx={{ mb: 2 }}>
                 {answerGenerateProgress.message}
               </Alert>
-            </Box>
-          )}
-          {answerGenerateProgress.status === 'error' && (
-            <Box sx={{ mt: 2 }}>
-              <Alert severity="error" sx={{ mb: 2 }}>
-                {answerGenerateProgress.message}
-              </Alert>
+              <Typography>
+                答案生成完成，共生成 {answerGenerateProgress.current} 个答案
+              </Typography>
             </Box>
           )}
         </DialogContent>
         <DialogActions>
           <Button
             onClick={() => {
-              setAnswerGenerateProgress(prev => ({ ...prev, isOpen: false }));
-              setGeneratingAnswerQuestion(null);
+              if (answerGenerateProgress.status === 'processing') {
+                isCancelledRef.current = true;
+                setAnswerGenerateProgress(prev => ({
+                  ...prev,
+                  status: 'cancelling',
+                  message: '正在取消生成...'
+                }));
+              } else {
+                setAnswerGenerateProgress(prev => ({ ...prev, isOpen: false }));
+              }
             }}
-            disabled={answerGenerateProgress.status === 'processing'}
           >
-            {answerGenerateProgress.status === 'processing' ? '生成中...' : '关闭'}
+            {answerGenerateProgress.status === 'processing' ? '取消' : '关闭'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -2374,6 +2670,54 @@ export default function Project() {
           >
             删除
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={openBatchDeleteQuestions}
+        onClose={() => setOpenBatchDeleteQuestions(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>批量删除问题</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ mt: 2 }}>
+            确定要删除选中的 {selectedQuestions.length} 个问题吗？此操作不可撤销。
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenBatchDeleteQuestions(false)}>取消</Button>
+          <Button
+            onClick={handleBatchDeleteQuestions}
+            color="error"
+            variant="contained"
+          >
+            删除
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={openViewChunkContent}
+        onClose={() => setOpenViewChunkContent(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>分块内容</DialogTitle>
+        <DialogContent>
+          <Typography
+            variant="body1"
+            sx={{
+              whiteSpace: 'pre-wrap',
+              maxHeight: '60vh',
+              overflow: 'auto'
+            }}
+          >
+            {viewingChunkContent?.content}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenViewChunkContent(false)}>关闭</Button>
         </DialogActions>
       </Dialog>
     </Box>

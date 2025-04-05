@@ -12,6 +12,7 @@ from backend.app.services.question_service import QuestionService
 from backend.app.services.dataset_service import DatasetService
 from backend.app.core.database import get_db
 from backend.app.models.database import Text as TextModel
+from backend.app.schemas.question import Question, QuestionCreate, QuestionUpdate, QuestionGenerationResponse
 import os
 
 router = APIRouter()
@@ -254,7 +255,7 @@ async def generate_dataset_from_chunk(
     return dataset
 
 
-@router.post("/{project_id}/texts/{text_id}/chunk/{chunk_index}/generate-questions", response_model=List[Question])
+@router.post("/{project_id}/texts/{text_id}/chunk/{chunk_index}/generate-questions", response_model=QuestionGenerationResponse)
 async def generate_questions_for_chunk(
     project_id: str,
     text_id: str,
@@ -275,8 +276,18 @@ async def generate_questions_for_chunk(
     question_service = QuestionService()
     
     # 生成问题
-    questions = await question_service.generate_questions(db, text, chunk_index)
-    return questions
+    result = await question_service.generate_questions(db, text, chunk_index)
+    
+    # 如果返回的是列表，说明成功
+    if isinstance(result, list):
+        return {
+            "success": True,
+            "questions": result,
+            "error": None
+        }
+    
+    # 否则返回错误信息
+    return result
 
 
 @router.get("/{project_id}/texts/{text_id}/chunk/{chunk_index}/questions/count")

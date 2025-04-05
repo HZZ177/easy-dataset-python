@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any, Union
 from sqlalchemy.orm import Session
 from ..models.question import Question, QuestionCreate, QuestionUpdate
 from ..models.database import Question as QuestionModel, Chunk as ChunkModel
@@ -8,6 +8,8 @@ from backend.core.logger import logger
 import uuid
 from uuid import UUID
 from datetime import datetime
+import json
+import re
 
 
 class QuestionService:
@@ -241,7 +243,20 @@ class QuestionService:
             return True
         return False
 
-    async def generate_questions(self, db: Session, text, chunk_index: Optional[int] = None) -> List[Question]:
+    @staticmethod
+    async def batch_delete_questions(db: Session, question_ids: List[str]) -> bool:
+        """批量删除问题"""
+        try:
+            # 使用 IN 操作符一次性删除多个问题
+            db.query(QuestionModel).filter(QuestionModel.id.in_(question_ids)).delete(synchronize_session=False)
+            db.commit()
+            return True
+        except Exception as e:
+            db.rollback()
+            print(f"批量删除问题失败: {str(e)}")
+            return False
+
+    async def generate_questions(self, db: Session, text, chunk_index: Optional[int] = None) -> Union[List[Question], Dict[str, Any]]:
         """为文本生成问题
         
         Args:
@@ -250,57 +265,65 @@ class QuestionService:
             chunk_index: 可选的分块索引，如果指定则只处理该分块
             
         Returns:
-            List[Question]: 生成的问题列表
+            Union[List[Question], Dict[str, Any]]: 
+                成功时返回问题列表
+                失败时返回包含错误信息的字典
         """
-        # 获取分块
-        chunks = db.query(ChunkModel).filter(ChunkModel.text_id == text.id).all()
-        if not chunks:
-            raise ValueError("文本没有分块数据")
+        try:
+            # 获取分块
+            chunks = db.query(ChunkModel).filter(ChunkModel.text_id == text.id).all()
+            if not chunks:
+                return {
+                    "success": False,
+                    "questions": [],
+                    "error": "文本没有分块数据"
+                }
 
-        # 确定要处理的分块
-        chunks_to_process = []
-        if chunk_index is not None:
-            if chunk_index >= len(chunks):
-                raise ValueError(f"分块索引 {chunk_index} 超出范围")
-            chunks_to_process = [chunks[chunk_index]]
-        else:
-            chunks_to_process = chunks
+            # 确定要处理的分块
+            chunks_to_process = []
+            if chunk_index is not None:
+                if chunk_index >= len(chunks):
+                    return {
+                        "success": False,
+                        "questions": [],
+                        "error": f"分块索引 {chunk_index} 超出范围"
+                    }
+                chunks_to_process = [chunks[chunk_index]]
+            else:
+                chunks_to_process = chunks
 
-        # 创建问题生成 Agent
-        agent = self.create_question_generator_agent()
-        questions = []
-        total_chunks = len(chunks_to_process)
-        processed_chunks = 0
+            # 创建问题生成 Agent
+            agent = self.create_question_generator_agent()
+            questions = []
+            total_chunks = len(chunks_to_process)
+            processed_chunks = 0
 
-        # 处理每个分块
-        for chunk in chunks_to_process:
-            try:
-                # 创建任务
-                task = self.create_question_task(agent, chunk.content)
-
-                # 创建 Crew 并执行任务
-                crew = Crew(
-                    agents=[agent],
-                    tasks=[task],
-                    verbose=True
-                )
-
-                # 执行任务获取结果
-                result = crew.kickoff()
-                # 将 CrewOutput 转换为字符串
-                result_str = str(result)
-
+            # 处理每个分块
+            for chunk in chunks_to_process:
                 try:
+                    # 创建任务
+                    task = self.create_question_task(agent, chunk.content)
+
+                    # 创建 Crew 并执行任务
+                    crew = Crew(
+                        agents=[agent],
+                        tasks=[task],
+                        verbose=True
+                    )
+
+                    # 执行任务获取结果
+                    result = crew.kickoff()
+                    # 将 CrewOutput 转换为字符串
+                    result_str = str(result)
+
                     # 提取 JSON 部分
-                    import re
                     json_match = re.search(r'```json\s*(\[.*?\])\s*```', result_str, re.DOTALL)
                     if not json_match:
                         logger.info("未找到有效的 JSON 数据")
                         continue
-                    
+
                     json_str = json_match.group(1)
                     # 解析返回的 JSON 结果
-                    import json
                     questions_data = json.loads(json_str)
 
                     # 为每个生成的问题创建数据库记录
@@ -308,7 +331,7 @@ class QuestionService:
                         if not isinstance(question_content, str):
                             logger.info(f"跳过无效的问题数据: {question_content}")
                             continue
-                            
+
                         question = QuestionCreate(
                             content=question_content,
                             answer="暂无答案",  # 设置默认答案
@@ -334,12 +357,24 @@ class QuestionService:
                 processed_chunks += 1
                 logger.info(f"进度: {processed_chunks}/{total_chunks} 分块处理完成")
 
-            except Exception as e:
-                logger.info(f"处理分块时发生错误: {str(e)}")
-                continue
+            logger.info(f"问题生成完成，共生成 {len(questions)} 个问题")
+            
+            if not questions:
+                return {
+                    "success": False,
+                    "questions": [],
+                    "error": "未能成功生成任何问题"
+                }
+                
+            return questions
 
-        logger.info(f"问题生成完成，共生成 {len(questions)} 个问题")
-        return questions
+        except Exception as e:
+            logger.error(f"生成问题过程中发生错误: {str(e)}")
+            return {
+                "success": False,
+                "questions": [],
+                "error": str(e)
+            }
 
     @staticmethod
     async def update_question(db: Session, question_id: str, question: QuestionUpdate) -> Optional[Question]:

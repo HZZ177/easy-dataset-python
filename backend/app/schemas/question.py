@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Union
 from datetime import datetime
 
 
@@ -33,3 +33,19 @@ class QuestionUpdate(BaseModel):
     metadata: Optional[dict] = None
     status: Optional[str] = None
     tags: Optional[List[str]] = None
+
+
+class QuestionGenerationResponse(BaseModel):
+    success: bool
+    questions: List[Question] | None = None
+    error: str | None = None
+
+
+class AnswerGenerationResponse(BaseModel):
+    success: bool
+    question: Question | None = None
+    error: str | None = None
+
+
+class BatchDeleteRequest(BaseModel):
+    question_ids: List[str]

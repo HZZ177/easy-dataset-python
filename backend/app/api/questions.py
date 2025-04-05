@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List
 from backend.app.core.database import get_db
-from backend.app.schemas.question import Question, QuestionCreate, QuestionUpdate
+from backend.app.schemas.question import Question, QuestionCreate, QuestionUpdate, AnswerGenerationResponse, BatchDeleteRequest
 from backend.app.services.question_service import QuestionService
 
 router = APIRouter()
@@ -83,14 +83,41 @@ async def get_chunk_question_count(
     return {"count": count}
 
 
-@router.post("/{question_id}/generate-answer", response_model=Question)
+@router.post("/{question_id}/generate-answer", response_model=AnswerGenerationResponse)
 async def generate_answer(
     question_id: str,
     db: Session = Depends(get_db)
 ):
     """为问题生成答案"""
     question_service = QuestionService()  # 创建 QuestionService 实例
-    question = await question_service.generate_answer(db, question_id)
-    if not question:
-        raise HTTPException(status_code=404, detail="问题不存在")
-    return question
+    try:
+        question = await question_service.generate_answer(db, question_id)
+        if not question:
+            return {
+                "success": False,
+                "question": None,
+                "error": "问题不存在"
+            }
+        return {
+            "success": True,
+            "question": question,
+            "error": None
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "question": None,
+            "error": str(e)
+        }
+
+
+@router.post("/batch-delete")
+async def batch_delete_questions(
+    request: BatchDeleteRequest,
+    db: Session = Depends(get_db)
+):
+    """批量删除问题"""
+    success = await QuestionService.batch_delete_questions(db, request.question_ids)
+    if not success:
+        raise HTTPException(status_code=400, detail="批量删除失败")
+    return {"message": "批量删除成功"}
