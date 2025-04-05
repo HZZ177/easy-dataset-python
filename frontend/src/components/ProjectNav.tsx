@@ -3,12 +3,12 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
   Button,
-  Select,
-  MenuItem,
   FormControl,
   Typography,
   AppBar,
   Toolbar,
+  Autocomplete,
+  TextField,
 } from '@mui/material';
 import {
   Description as TextIcon,
@@ -76,17 +76,25 @@ export default function ProjectNav({ currentProjectId, refreshTrigger }: Project
     >
       <Toolbar sx={{ gap: 2 }}>
         <FormControl size="small" sx={{ minWidth: 200 }}>
-          <Select
-            value={currentProjectId}
-            onChange={(e) => handleProjectChange(e.target.value)}
-            displayEmpty
-          >
-            {projects.map((project) => (
-              <MenuItem key={project.id} value={project.id}>
-                {project.name}
-              </MenuItem>
-            ))}
-          </Select>
+          <Autocomplete
+            value={currentProject || undefined}
+            onChange={(_, newValue) => {
+              if (newValue) {
+                handleProjectChange(newValue.id);
+              }
+            }}
+            options={projects}
+            getOptionLabel={(option) => option.name}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                size="small"
+                placeholder="选择项目"
+              />
+            )}
+            disableClearable
+            isOptionEqualToValue={(option, value) => option.id === value.id}
+          />
         </FormControl>
 
         <Box sx={{ display: 'flex', gap: 1 }}>

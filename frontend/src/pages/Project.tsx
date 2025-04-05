@@ -37,6 +37,7 @@ import {
   TableRow,
   TableCell,
   Tooltip,
+  Autocomplete,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -1567,45 +1568,45 @@ export default function Project() {
                   <Grid container spacing={2} alignItems="center">
                     <Grid item xs={12} sm={4}>
                       <FormControl fullWidth size="small">
-                        <InputLabel>选择文件</InputLabel>
-                        <Select
-                          value={selectedTextId || 'all'}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            setSelectedTextId(value === 'all' ? null : value);
+                        <Autocomplete
+                          value={selectedTextId ? texts.find(t => t.id === selectedTextId) || null : null}
+                          onChange={(_, newValue) => {
+                            setSelectedTextId(newValue ? newValue.id : null);
                             setSelectedChunkIndex(null);
                             setPage(1);
                           }}
-                          label="选择文件"
-                        >
-                          <MenuItem value="all">全部文件</MenuItem>
-                          {texts.map((text) => (
-                            <MenuItem key={text.id} value={text.id}>
-                              {text.title}
-                            </MenuItem>
-                          ))}
-                        </Select>
+                          options={texts}
+                          getOptionLabel={(option) => option.title}
+                          renderInput={(params) => (
+                            <TextField
+                              {...params}
+                              label="选择文件"
+                              size="small"
+                            />
+                          )}
+                          isOptionEqualToValue={(option, value) => option.id === value.id}
+                        />
                       </FormControl>
                     </Grid>
                     <Grid item xs={12} sm={4}>
                       <FormControl fullWidth size="small" disabled={!selectedTextId}>
-                        <InputLabel>选择分块</InputLabel>
-                        <Select
-                          value={selectedChunkIndex === null ? 'all' : selectedChunkIndex}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            setSelectedChunkIndex(value === 'all' ? null : Number(value));
+                        <Autocomplete
+                          value={selectedChunkIndex !== null ? selectedTextChunks[selectedChunkIndex] : null}
+                          onChange={(_, newValue) => {
+                            setSelectedChunkIndex(newValue ? selectedTextChunks.indexOf(newValue) : null);
                             setPage(1);
                           }}
-                          label="选择分块"
-                        >
-                          <MenuItem value="all">全部分块</MenuItem>
-                          {selectedTextChunks.map((chunk, index) => (
-                            <MenuItem key={index} value={index}>
-                              分块 {index + 1} ({chunk.content.length} 字符)
-                            </MenuItem>
-                          ))}
-                        </Select>
+                          options={selectedTextChunks}
+                          getOptionLabel={(option) => `分块 ${selectedTextChunks.indexOf(option) + 1} (${option.content.length} 字符)`}
+                          renderInput={(params) => (
+                            <TextField
+                              {...params}
+                              label="选择分块"
+                              size="small"
+                            />
+                          )}
+                          isOptionEqualToValue={(option, value) => option === value}
+                        />
                       </FormControl>
                     </Grid>
                   </Grid>
