@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
   Typography,
@@ -28,6 +28,7 @@ import {
   Edit as EditIcon,
   Description as DescriptionIcon,
   NavigateNext as NavigateNextIcon,
+  QuestionAnswer as QuestionAnswerIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
 
@@ -38,10 +39,12 @@ interface Project {
   created_at: string;
   updated_at: string;
   text_count: number;
+  question_count?: number;
 }
 
 export default function Home() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [projects, setProjects] = useState<Project[]>([]);
   const [openCreate, setOpenCreate] = useState(false);
   const [newProject, setNewProject] = useState({ name: '', description: '' });
@@ -51,15 +54,35 @@ export default function Home() {
 
   useEffect(() => {
     fetchProjects();
-  }, []);
+  }, [location.search]);
 
   const fetchProjects = async () => {
+    setError(null);
+    
     try {
       console.log('开始获取项目列表...');
       const response = await axios.get('/api/projects');
       console.log('API响应:', response);
       if (Array.isArray(response.data)) {
-        setProjects(response.data);
+        // 获取每个项目的问题数量
+        const projectsWithQuestions = await Promise.all(
+          response.data.map(async (project) => {
+            try {
+              const questionCountResponse = await axios.get(`/api/projects/${project.id}/question-count`);
+              return {
+                ...project,
+                question_count: questionCountResponse.data.count
+              };
+            } catch (error) {
+              console.error(`获取项目 ${project.id} 的问题数量失败:`, error);
+              return {
+                ...project,
+                question_count: 0
+              };
+            }
+          })
+        );
+        setProjects(projectsWithQuestions);
       } else {
         console.error('API返回的数据格式不正确:', response.data);
         setError('获取项目列表失败：数据格式不正确');
@@ -115,7 +138,7 @@ export default function Home() {
   };
 
   return (
-    <Box sx={{ p: 3 }}>
+    <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
         <Typography variant="h4">我的项目</Typography>
         <Button
@@ -147,12 +170,22 @@ export default function Home() {
                   transform: 'translateY(-4px)',
                   boxShadow: (theme) => theme.shadows[8],
                 },
+                borderRadius: 2,
+                overflow: 'hidden',
               }}
               onClick={() => navigate(`/projects/${project.id}/texts`)}
             >
               <CardHeader
                 avatar={
-                  <Avatar sx={{ bgcolor: getProjectColor(project.id) }}>
+                  <Avatar 
+                    sx={{ 
+                      bgcolor: getProjectColor(project.id),
+                      width: 48,
+                      height: 48,
+                      fontSize: '1.5rem',
+                      fontWeight: 'bold'
+                    }}
+                  >
                     {project.name.charAt(0).toUpperCase()}
                   </Avatar>
                 }
@@ -166,19 +199,52 @@ export default function Home() {
                     <MoreVertIcon />
                   </IconButton>
                 }
-                title={project.name}
-                subheader={new Date(project.created_at).toLocaleDateString()}
+                title={
+                  <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+                    {project.name}
+                  </Typography>
+                }
+                subheader={
+                  <Typography variant="body2" color="text.secondary">
+                    创建于 {new Date(project.created_at).toLocaleDateString()}
+                  </Typography>
+                }
+                sx={{
+                  pb: 1,
+                  '& .MuiCardHeader-content': {
+                    overflow: 'hidden'
+                  }
+                }}
               />
-              <CardContent sx={{ flexGrow: 1 }}>
-                <Typography color="text.secondary" sx={{ mb: 2 }}>
+              <CardContent sx={{ flexGrow: 1, pt: 0 }}>
+                <Typography 
+                  color="text.secondary" 
+                  sx={{ 
+                    mb: 2,
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    minHeight: '2.5em'
+                  }}
+                >
                   {project.description}
                 </Typography>
-                <Box sx={{ display: 'flex', gap: 1 }}>
+                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                   <Chip
                     size="small"
                     icon={<DescriptionIcon />}
                     label={`${project.text_count} 个文件`}
                     variant="outlined"
+                    color={project.text_count > 0 ? 'primary' : 'default'}
+                  />
+                  <Chip
+                    size="small"
+                    icon={<QuestionAnswerIcon />}
+                    label={`${project.question_count || 0} 个问题`}
+                    variant="outlined"
+                    color={(project.question_count || 0) > 0 ? 'primary' : 'default'}
                   />
                 </Box>
               </CardContent>
@@ -192,15 +258,24 @@ export default function Home() {
                   borderColor: (theme) => theme.palette.mode === 'light'
                     ? theme.palette.grey[200]
                     : theme.palette.grey[800],
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 0.5,
+                  '&:hover': {
+                    bgcolor: (theme) => theme.palette.mode === 'light'
+                      ? theme.palette.grey[100]
+                      : theme.palette.grey[800],
+                  }
                 }}
               >
                 <Typography 
                   variant="body2" 
                   color="primary"
                   sx={{ 
-                    display: 'flex', 
+                    fontWeight: 500,
+                    display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center',
                     gap: 0.5,
                   }}
                 >

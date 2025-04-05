@@ -1659,7 +1659,7 @@ export default function Project() {
                                 />
                               </TableCell>
                               <TableCell>{question.content}</TableCell>
-                              <TableCell>{new Date(question.created_at).toLocaleString()}</TableCell>
+                              <TableCell align="center">{new Date(question.created_at).toLocaleString()}</TableCell>
                               <TableCell>
                                 <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                                   {/* 所属文件标签 */}
@@ -1679,7 +1679,7 @@ export default function Project() {
                                 </Box>
                               </TableCell>
                               <TableCell>
-                                <Typography color="text.secondary">
+                                <Typography color="text.secondary" align="center">
                                   无
                                 </Typography>
                               </TableCell>
@@ -1795,20 +1795,13 @@ export default function Project() {
             element={
               <Box sx={styles.projectContainer}>
                 <Box sx={styles.fileList}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
+                  <Box sx={{ mb: 3 }}>
                     <Typography variant="h5">文件列表</Typography>
-                    <Button
-                      variant="contained"
-                      startIcon={<AddIcon />}
-                      onClick={() => setOpenUpload(true)}
-                    >
-                      上传文件
-                    </Button>
                   </Box>
                   {texts.length === 0 ? (
                     <Paper sx={{ p: 3, textAlign: 'center' }}>
                       <Typography color="text.secondary">
-                        暂无文件，请先上传文件
+                        暂无文件
                       </Typography>
                     </Paper>
                   ) : (
@@ -1854,22 +1847,22 @@ export default function Project() {
 
                 {state.selectedFile && (
                   <Box sx={styles.chunkList}>
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="h6">分块列表</Typography>
+                    </Box>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        <FormControlLabel
-                          control={
-                            <Checkbox
-                              checked={isAllSelected()}
-                              indeterminate={isIndeterminate()}
-                              onChange={handleSelectAll}
-                              size="small"
-                            />
-                          }
-                          label="全选"
-                          sx={{ m: 0 }}
-                        />
-                        <Typography variant="h6">分块列表</Typography>
-                      </Box>
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={isAllSelected()}
+                            indeterminate={isIndeterminate()}
+                            onChange={handleSelectAll}
+                            size="small"
+                          />
+                        }
+                        label="全选"
+                        sx={{ m: 0 }}
+                      />
                       <Button
                         variant="contained"
                         size="small"
@@ -2348,6 +2341,12 @@ export default function Project() {
         }}
         maxWidth="md"
         fullWidth
+        sx={{
+          '& .MuiDialog-paper': {
+            margin: '24px',
+            maxHeight: 'calc(100% - 48px)',
+          }
+        }}
       >
         <DialogTitle>编辑问题</DialogTitle>
         <DialogContent>
@@ -2514,6 +2513,12 @@ export default function Project() {
         onClose={() => setOpenGenerateAnswer(false)}
         maxWidth="sm"
         fullWidth
+        sx={{
+          '& .MuiDialog-paper': {
+            margin: '24px',
+            maxHeight: 'calc(100% - 48px)',
+          }
+        }}
       >
         <DialogTitle>生成答案</DialogTitle>
         <DialogContent>
@@ -2703,6 +2708,12 @@ export default function Project() {
         onClose={() => setOpenViewChunkContent(false)}
         maxWidth="md"
         fullWidth
+        sx={{
+          '& .MuiDialog-paper': {
+            margin: '24px',
+            maxHeight: 'calc(100% - 48px)',
+          }
+        }}
       >
         <DialogTitle>分块内容</DialogTitle>
         <DialogContent>

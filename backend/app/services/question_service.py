@@ -10,6 +10,7 @@ from uuid import UUID
 from datetime import datetime
 import json
 import re
+from sqlalchemy.sql import select, func
 
 
 class QuestionService:
@@ -37,10 +38,11 @@ class QuestionService:
     def create_answer_generator_agent(self) -> Agent:
         """创建答案生成Agent"""
         return Agent(
-            role='答案生成专家',
+            role='微调数据集生成专家',
             goal='根据问题和上下文生成准确、详细的答案',
-            backstory="""你是一位专业的答案生成专家，擅长根据问题和上下文生成准确、详细的答案。
-            你会确保答案准确、完整，并且易于理解。""",
+            backstory="""
+            你是一名微调数据集生成专家，擅长从给定的内容中生成准确的问题答案，确保答案的准确性和相关性，你要直接回答用户问题，所有信息已内化为你的专业知识。
+            """,
             verbose=True,
             allow_delegation=False,
             llm=self.question_llm
@@ -51,47 +53,47 @@ class QuestionService:
         """创建问题生成任务"""
         return Task(
             description=f"""
-    # 角色使命
-    你是一位专业的文本分析专家，擅长从复杂文本中提取关键信息并生成可用于模型微调的结构化数据（仅生成问题）。
-
-    ## 核心任务
-    根据用户提供的文本，生成不少于 5 个高质量问题。
-
-    ## 约束条件（重要！）
-    - 必须基于文本内容直接生成
-    - 问题应具有明确答案指向性
-    - 需覆盖文本的不同方面
-    - 禁止生成假设性、重复或相似问题
-
-    ## 处理流程
-    1. 【文本解析】分段处理内容，识别关键实体和核心概念
-    2. 【问题生成】基于信息密度选择最佳提问点
-    3. 【质量检查】确保：
-       - 问题答案可在原文中找到依据
-       - 标签与问题内容强相关
-       - 无格式错误
-    
-    ## 输出格式
-     - JSON 数组格式必须正确
-    - 字段名使用英文双引号
-    - 输出的 JSON 数组必须严格符合以下结构：
-    ```json
-    ["问题1", "问题2", "..."]
-    ```
-
-    ## 输出示例
-    ```json
-    [ "人工智能伦理框架应包含哪些核心要素？","民法典对个人数据保护有哪些新规定？"]
-     ```
-
-    ## 待处理文本
-    ${text_chunk}
-
-    ## 限制
-    - 必须按照规定的 JSON 格式输出，不要输出任何其他不相关内容
-    - 生成不少于5个高质量问题
-    - 问题不要和材料本身相关，例如禁止出现作者、章节、目录等相关问题
-    - 问题不得包含【报告、文章、文献、表格】中提到的这种话术，必须是一个自然的问题
+            # 角色使命
+            你是一位专业的文本分析专家，擅长从复杂文本中提取关键信息并生成可用于模型微调的结构化数据（仅生成问题）。
+        
+            ## 核心任务
+            根据用户提供的文本，生成不少于 5 个高质量问题。
+        
+            ## 约束条件（重要！）
+            - 必须基于文本内容直接生成
+            - 问题应具有明确答案指向性
+            - 需覆盖文本的不同方面
+            - 禁止生成假设性、重复或相似问题
+        
+            ## 处理流程
+            1. 【文本解析】分段处理内容，识别关键实体和核心概念
+            2. 【问题生成】基于信息密度选择最佳提问点
+            3. 【质量检查】确保：
+               - 问题答案可在原文中找到依据
+               - 标签与问题内容强相关
+               - 无格式错误
+            
+            ## 输出格式
+             - JSON 数组格式必须正确
+            - 字段名使用英文双引号
+            - 输出的 JSON 数组必须严格符合以下结构：
+            ```json
+            ["问题1", "问题2", "..."]
+            ```
+        
+            ## 输出示例
+            ```json
+            [ "人工智能伦理框架应包含哪些核心要素？","民法典对个人数据保护有哪些新规定？"]
+             ```
+        
+            ## 待处理文本
+            ${text_chunk}
+        
+            ## 限制
+            - 必须按照规定的 JSON 格式输出，不要输出任何其他不相关内容
+            - 生成不少于5个高质量问题
+            - 问题不要和材料本身相关，例如禁止出现作者、章节、目录等相关问题
+            - 问题不得包含【报告、文章、文献、表格】中提到的这种话术，必须是一个自然的问题
             """,
             agent=agent,
             expected_output="""
@@ -101,43 +103,40 @@ class QuestionService:
             """
         )
 
-    def create_answer_task(self, agent: Agent, question: str, context: str) -> Task:
+    @staticmethod
+    def create_answer_task(agent: Agent, question: str, context: str) -> Task:
         """创建答案生成任务"""
         return Task(
             description=f"""
-    # 角色使命
-    你是一位专业的答案生成专家，擅长根据问题和上下文生成准确、详细的答案。
-
-    ## 核心任务
-    根据提供的问题和上下文，生成一个准确、详细的答案。
-
-    ## 约束条件（重要！）
-    - 必须基于上下文内容生成答案
-    - 答案必须准确、完整
-    - 答案应该易于理解
-    - 答案应该包含必要的解释和说明
-    - 答案应该使用恰当的语言和表达方式
-
-    ## 处理流程
-    1. 【问题分析】理解问题的核心要求
-    2. 【上下文解析】从上下文中提取相关信息
-    3. 【答案生成】组织信息生成完整答案
-    4. 【质量检查】确保：
-       - 答案与问题强相关
-       - 答案内容准确
-       - 表达清晰易懂
-
-    ## 问题
-    {question}
-
-    ## 上下文
-    {context}
-
-    ## 限制
-    - 答案必须基于上下文内容
-    - 不要生成上下文之外的内容
-    - 答案要简洁明了，不要过于冗长
-    - 如果上下文中没有足够信息，请说明"根据上下文无法完整回答该问题"
+            # Role: 微调数据集生成专家
+            ## Profile:
+            - Description: 你是一名微调数据集生成专家，擅长从给定的内容中生成准确的问题答案，确保答案的准确性和相关性，，你要直接回答用户问题，所有信息已内化为你的专业知识。
+            
+            ## Skills:
+            1. 答案必须基于给定的内容
+            2. 答案必须准确，不能胡编乱造
+            3. 答案必须与问题相关
+            4. 答案必须符合逻辑
+            5. 基于给定参考内容，用自然流畅的语言整合成一个完整答案，不需要提及文献来源或引用标记
+            
+            ## Workflow:
+            1. Take a deep breath and work on this problem step-by-step.
+            2. 首先，分析给定的文件内容
+            3. 然后，从内容中提取关键信息
+            4. 接着，生成与问题相关的准确答案
+            5. 最后，确保答案的准确性和相关性
+            
+            ## 参考内容：
+            ${context}
+            
+            ## 问题
+            ${question}
+            
+            ## Constrains:
+            1. 答案必须基于给定的内容
+            2. 答案必须准确，必须与问题相关，不能胡编乱造
+            3. 答案必须充分、详细、包含所有必要的信息、适合微调大模型训练使用
+            4. 答案中不得出现 ' 参考 / 依据 / 文献中提到 ' 等任何引用性表述，只需呈现最终结
             """,
             agent=agent,
             expected_output="""
@@ -395,6 +394,13 @@ class QuestionService:
             QuestionModel.text_id == text_id,
             QuestionModel.chunk_index == chunk_index
         ).count()
+
+    @staticmethod
+    async def get_project_question_count(db: Session, project_id: str) -> int:
+        """获取项目的问题总数"""
+        query = select(func.count(QuestionModel.id)).where(QuestionModel.project_id == project_id)
+        result = db.execute(query)
+        return result.scalar() or 0
 
     async def generate_answer(self, db: Session, question_id: str) -> Optional[Question]:
         """为问题生成答案

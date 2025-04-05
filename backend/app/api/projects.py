@@ -300,3 +300,13 @@ async def get_chunk_question_count(
     """获取特定分块的问题数量"""
     count = await QuestionService.get_chunk_question_count(db, project_id, text_id, chunk_index)
     return {"count": count}
+
+
+@router.get("/{project_id}/question-count")
+async def get_project_question_count(
+    project_id: str,
+    db: Session = Depends(get_db)
+):
+    """获取项目的问题总数"""
+    count = await QuestionService.get_project_question_count(db, project_id)
+    return {"count": count}

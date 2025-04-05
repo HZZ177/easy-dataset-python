@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Routes, Route, useNavigate } from 'react-router-dom';
+import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
   Container,
@@ -17,16 +17,16 @@ import {
   Brightness4 as DarkIcon,
   Brightness7 as LightIcon,
   Home as HomeIcon,
-  Translate as TranslateIcon,
 } from '@mui/icons-material';
+import axios from 'axios';
 import Home from './pages/Home';
 import Project from './pages/Project';
 
 export default function App() {
   const navigate = useNavigate();
+  const location = useLocation();
   const prefersDarkMode = useMediaQuery('(prefers-color-scheme: dark)');
   const [mode, setMode] = useState<'light' | 'dark'>(prefersDarkMode ? 'dark' : 'light');
-  const [language, setLanguage] = useState<'zh' | 'en'>('zh');
   
   const theme = useMemo(
     () =>
@@ -72,59 +72,88 @@ export default function App() {
     setMode((prevMode) => (prevMode === 'light' ? 'dark' : 'light'));
   };
 
-  const toggleLanguage = () => {
-    setLanguage((prevLang) => (prevLang === 'zh' ? 'en' : 'zh'));
+  const refreshAndNavigate = async () => {
+    try {
+      console.log('正在刷新项目列表...');
+      navigate('/?refresh=' + new Date().getTime(), { replace: true });
+    } catch (error) {
+      console.error('刷新项目列表失败:', error);
+      navigate('/?refresh=' + new Date().getTime(), { replace: true });
+    }
   };
 
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-        <AppBar position="fixed" elevation={1} color="inherit">
+      <Box sx={{ 
+        display: 'flex', 
+        flexDirection: 'column', 
+        minHeight: '100vh',
+        position: 'relative'
+      }}>
+        <AppBar 
+          position="fixed" 
+          elevation={1} 
+          color="inherit"
+          sx={{
+            zIndex: (theme) => theme.zIndex.drawer + 1
+          }}
+        >
           <Toolbar>
-            <IconButton
-              color="inherit"
-              onClick={() => navigate('/')}
-              sx={{ mr: 2 }}
+            <Box 
+              sx={{ 
+                display: 'flex', 
+                alignItems: 'center',
+                cursor: 'pointer',
+                '&:hover': {
+                  opacity: 0.8
+                }
+              }}
+              onClick={refreshAndNavigate}
             >
-              <HomeIcon />
-            </IconButton>
-            <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-              Easy Dataset
-            </Typography>
-            <IconButton color="inherit" onClick={toggleLanguage}>
-              <TranslateIcon />
-            </IconButton>
+              <IconButton
+                color="inherit"
+                sx={{ mr: 1 }}
+              >
+                <HomeIcon />
+              </IconButton>
+              <Typography 
+                variant="h6" 
+                component="div"
+              >
+                Easy Dataset
+              </Typography>
+            </Box>
+            <Box sx={{ flexGrow: 1 }} />
             <IconButton color="inherit" onClick={toggleTheme}>
               {theme.palette.mode === 'dark' ? <LightIcon /> : <DarkIcon />}
             </IconButton>
           </Toolbar>
         </AppBar>
 
-        <Box component="main" sx={{ flexGrow: 1, pt: 8 }}>
-          <Container maxWidth="lg" sx={{ py: 4 }}>
+        <Box 
+          component="main" 
+          sx={{ 
+            flexGrow: 1,
+            pt: '64px', // AppBar 的高度
+            minHeight: '100vh',
+            position: 'relative',
+            overflow: 'hidden'
+          }}
+        >
+          <Container 
+            maxWidth="lg" 
+            sx={{ 
+              py: 4,
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column'
+            }}
+          >
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/projects/:projectId/*" element={<Project />} />
             </Routes>
-          </Container>
-        </Box>
-
-        <Box
-          component="footer"
-          sx={{
-            py: 3,
-            px: 2,
-            mt: 'auto',
-            backgroundColor: theme.palette.mode === 'light'
-              ? theme.palette.grey[200]
-              : theme.palette.grey[800],
-          }}
-        >
-          <Container maxWidth="lg">
-            <Typography variant="body2" color="text.secondary" align="center">
-              © {new Date().getFullYear()} Easy Dataset. {language === 'zh' ? '保留所有权利。' : 'All rights reserved.'}
-            </Typography>
           </Container>
         </Box>
       </Box>

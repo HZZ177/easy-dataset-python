@@ -8,15 +8,30 @@ import App from './App';
 // 添加全局样式
 const globalStyles = {
   html: {
-    overflowY: 'scroll', // 始终显示垂直滚动条
-    scrollbarGutter: 'stable' // 为滚动条预留空间
+    margin: 0,
+    padding: 0,
+    height: '100%'
   },
   body: {
     margin: 0,
     padding: 0,
-    overflowX: 'hidden', // 防止水平滚动
     width: '100%',
-    position: 'relative'
+    height: '100%',
+    overflow: 'hidden',
+    scrollbarGutter: 'stable',
+  },
+  '#root': {
+    width: '100%',
+    height: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  '.MuiDialog-root': {
+    scrollbarGutter: 'stable',
+  },
+  '.MuiDialog-paper': {
+    margin: '24px',
+    maxHeight: 'calc(100% - 48px)',
   }
 };
 
