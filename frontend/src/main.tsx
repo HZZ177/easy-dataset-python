@@ -7,31 +7,61 @@ import App from './App';
 
 // 添加全局样式
 const globalStyles = {
+  '*': {
+    margin: 0,
+    padding: 0,
+    boxSizing: 'border-box'
+  },
   html: {
     margin: 0,
     padding: 0,
-    height: '100%'
+    height: '100%',
+    width: '100%',
+    overflow: 'auto'
   },
   body: {
     margin: 0,
     padding: 0,
     width: '100%',
-    height: '100%',
-    overflow: 'hidden',
-    scrollbarGutter: 'stable',
+    minHeight: '100%',
+    overflow: 'auto',
+    scrollbarGutter: 'stable'
   },
   '#root': {
-    width: '100%',
-    height: '100%',
+    margin: 0,
+    padding: 0,
+    width: '100vw',
+    minHeight: '100vh',
     display: 'flex',
     flexDirection: 'column',
+    position: 'relative',
+    overflow: 'hidden'
   },
   '.MuiDialog-root': {
-    scrollbarGutter: 'stable',
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1300,
+    overflow: 'hidden'
   },
   '.MuiDialog-paper': {
+    position: 'absolute',
     margin: '24px',
     maxHeight: 'calc(100% - 48px)',
+    overflow: 'auto'
+  },
+  '.MuiDialog-container': {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden'
   }
 };
 

@@ -7,8 +7,9 @@ import {
   Typography,
   AppBar,
   Toolbar,
-  Autocomplete,
-  TextField,
+  Select,
+  MenuItem,
+  InputLabel,
 } from '@mui/material';
 import {
   Description as TextIcon,
@@ -33,33 +34,28 @@ export default function ProjectNav({ currentProjectId, refreshTrigger }: Project
   const navigate = useNavigate();
   const location = useLocation();
   const [projects, setProjects] = useState<Project[]>([]);
-  const [currentProject, setCurrentProject] = useState<Project | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchProjects();
   }, [refreshTrigger]);
 
-  useEffect(() => {
-    if (projects.length > 0) {
-      const project = projects.find(p => p.id === currentProjectId);
-      if (project) {
-        setCurrentProject(project);
-      }
-    }
-  }, [projects, currentProjectId]);
-
   const fetchProjects = async () => {
     try {
+      setLoading(true);
       const response = await axios.get('/api/projects');
       setProjects(response.data);
     } catch (error) {
       console.error('Error fetching projects:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
   const currentTab = location.pathname.split('/').pop() || 'texts';
 
-  const handleProjectChange = (projectId: string) => {
+  const handleProjectChange = (event: any) => {
+    const projectId = event.target.value;
     navigate(`/projects/${projectId}/${currentTab}`);
   };
 
@@ -76,25 +72,26 @@ export default function ProjectNav({ currentProjectId, refreshTrigger }: Project
     >
       <Toolbar sx={{ gap: 2 }}>
         <FormControl size="small" sx={{ minWidth: 200 }}>
-          <Autocomplete
-            value={currentProject || undefined}
-            onChange={(_, newValue) => {
-              if (newValue) {
-                handleProjectChange(newValue.id);
-              }
+          <Select
+            value={loading ? "" : currentProjectId}
+            onChange={handleProjectChange}
+            displayEmpty
+            disabled={loading}
+            sx={{
+              '& .MuiSelect-select': {
+                cursor: 'pointer',
+              },
             }}
-            options={projects}
-            getOptionLabel={(option) => option.name}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                size="small"
-                placeholder="选择项目"
-              />
-            )}
-            disableClearable
-            isOptionEqualToValue={(option, value) => option.id === value.id}
-          />
+          >
+            <MenuItem value="" disabled>
+              {loading ? "加载中..." : "选择项目"}
+            </MenuItem>
+            {projects.map((project) => (
+              <MenuItem key={project.id} value={project.id}>
+                {project.name}
+              </MenuItem>
+            ))}
+          </Select>
         </FormControl>
 
         <Box sx={{ display: 'flex', gap: 1 }}>

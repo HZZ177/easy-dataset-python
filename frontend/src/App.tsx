@@ -138,7 +138,8 @@ export default function App() {
             pt: '64px', // AppBar 的高度
             minHeight: '100vh',
             position: 'relative',
-            overflow: 'hidden'
+            overflow: 'hidden',
+            width: '100%'
           }}
         >
           <Container 

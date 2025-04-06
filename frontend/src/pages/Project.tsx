@@ -319,6 +319,20 @@ export default function Project() {
     chunkIndex: number;
     content: string;
   } | null>(null);
+  const [singleGenerateProgress, setSingleGenerateProgress] = useState({
+    isOpen: false,
+    status: 'processing' as 'processing' | 'success' | 'error',
+    message: '',
+    current: 0,
+    total: 1
+  });
+  const [singleAnswerGenerateProgress, setSingleAnswerGenerateProgress] = useState({
+    isOpen: false,
+    status: 'processing' as 'processing' | 'success' | 'error',
+    message: '',
+    current: 0,
+    total: 1
+  });
 
   // 获取当前 tab
   const currentTab = location.pathname.split('/').pop() || 'texts';
@@ -359,15 +373,23 @@ export default function Project() {
     if (!projectId) return;
     setLoading(true);
     try {
-      const response = await axios.get(`/api/questions/list`, {
-        params: {
-          project_id: projectId,
-          text_id: selectedTextId,
-          chunk_index: selectedChunkIndex,
-          page: page,
-          page_size: pageSize
-        }
-      });
+      const params: any = {
+        project_id: projectId,
+        page: page,
+        page_size: pageSize
+      };
+
+      // 只有当选择了具体文件时才添加 text_id 参数
+      if (selectedTextId && selectedTextId !== 'all') {
+        params.text_id = selectedTextId;
+      }
+
+      // 只有当选择了具体分块时才添加 chunk_index 参数
+      if (selectedChunkIndex !== null) {
+        params.chunk_index = selectedChunkIndex;
+      }
+
+      const response = await axios.get(`/api/questions/list`, { params });
       setQuestions(response.data.items);
       setTotalQuestions(response.data.total);
     } catch (error) {
@@ -660,6 +682,9 @@ export default function Project() {
   };
 
   const handleChunkSelect = async (chunkIndex: number) => {
+    const selectedFile = state.selectedFile;
+    if (!selectedFile) return;
+
     setState(prev => ({
       ...prev,
       selectedChunkIndex: chunkIndex,
@@ -667,25 +692,17 @@ export default function Project() {
     }));
 
     try {
-      const response = await axios.get(`/api/projects/datasets/chunk`, {
-        params: {
-          project_id: projectId,
-          chunk_index: chunkIndex
-        }
-      });
+      // 获取分块内容
       setState(prev => ({
         ...prev,
-        datasets: response.data.datasets,
-        selectedChunkContent: response.data.chunk_content,
+        selectedChunkContent: selectedFile.chunks[chunkIndex].content,
         loading: false
       }));
 
       // 获取分块的问题列表
-      if (state.selectedFile) {
-        await fetchChunkQuestions(state.selectedFile.id, chunkIndex);
-      }
+      await fetchChunkQuestions(selectedFile.id, chunkIndex);
     } catch (error) {
-      console.error('获取分块数据集失败:', error);
+      console.error('获取分块数据失败:', error);
       setState(prev => ({
         ...prev,
         loading: false
@@ -893,15 +910,13 @@ export default function Project() {
     if (!state.selectedFile || state.selectedChunkIndex === null) return;
     
     try {
-      setState(prev => ({
-        ...prev,
-        generateProgress: {
-          ...prev.generateProgress,
-          status: 'processing',
-          current: 0,
-          total: 1
-        }
-      }));
+      setSingleGenerateProgress({
+        isOpen: true,
+        status: 'processing',
+        message: '正在生成问题...',
+        current: 0,
+        total: 1
+      });
       setOpenGenerateQuestions(false);
       
       const response = await axios.post(
@@ -912,27 +927,45 @@ export default function Project() {
         throw new Error(response.data.error || '生成问题失败');
       }
       
+      // 获取更新后的问题数量
+      const questionCountResponse = await axios.get(
+        `/api/projects/${projectId}/texts/${state.selectedFile.id}/chunk/${state.selectedChunkIndex}/questions/count`
+      );
+      
+      // 更新分块的问题数量
+      const updatedChunks = state.selectedFile.chunks.map((chunk, index) => 
+        index === state.selectedChunkIndex
+          ? { ...chunk, question_count: questionCountResponse.data.count }
+          : chunk
+      );
+      
       setState(prev => ({
         ...prev,
-        generateProgress: {
-          ...prev.generateProgress,
-          status: 'success',
-          current: 1,
-          total: 1
+        selectedFile: {
+          ...prev.selectedFile!,
+          chunks: updatedChunks
         }
       }));
-      await fetchQuestions();
-    } catch (error) {
+
+      // 刷新分块问题列表
+      await fetchChunkQuestions(state.selectedFile.id, state.selectedChunkIndex);
+      
+      setSingleGenerateProgress({
+        isOpen: true,
+        status: 'success',
+        message: '问题生成完成',
+        current: 1,
+        total: 1
+      });
+    } catch (error: any) {
       handleError(error);
-      setState(prev => ({
-        ...prev,
-        generateProgress: {
-          ...prev.generateProgress,
-          status: 'error',
-          current: 0,
-          total: 1
-        }
-      }));
+      setSingleGenerateProgress({
+        isOpen: true,
+        status: 'error',
+        message: error.response?.data?.error || error.message || '生成问题失败',
+        current: 0,
+        total: 1
+      });
     }
   };
 
@@ -1233,7 +1266,7 @@ export default function Project() {
 
     try {
       setOpenGenerateAnswer(false);
-      setAnswerGenerateProgress({
+      setSingleAnswerGenerateProgress({
         isOpen: true,
         status: 'processing',
         message: '正在生成答案...',
@@ -1250,16 +1283,16 @@ export default function Project() {
       // 刷新问题列表
       await fetchQuestions();
       
-      setAnswerGenerateProgress({
+      setSingleAnswerGenerateProgress({
         isOpen: true,
         status: 'success',
-        message: '答案生成成功',
+        message: '答案生成完成',
         current: 1,
         total: 1
       });
     } catch (error: any) {
       console.error('生成答案失败:', error);
-      setAnswerGenerateProgress({
+      setSingleAnswerGenerateProgress({
         isOpen: true,
         status: 'error',
         message: error.response?.data?.error || error.message || '生成答案失败',
@@ -1424,7 +1457,7 @@ export default function Project() {
   }
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       <ErrorSnackbar
         open={errorSnackbar.open}
         message={errorSnackbar.message}
@@ -1569,43 +1602,78 @@ export default function Project() {
                     <Grid item xs={12} sm={4}>
                       <FormControl fullWidth size="small">
                         <Autocomplete
-                          value={selectedTextId ? texts.find(t => t.id === selectedTextId) || null : null}
+                          value={selectedTextId === null ? { id: null, title: '全部文件' } : (texts.find(t => t.id === selectedTextId) || null)}
                           onChange={(_, newValue) => {
-                            setSelectedTextId(newValue ? newValue.id : null);
+                            setSelectedTextId(newValue?.id || null);
                             setSelectedChunkIndex(null);
                             setPage(1);
                           }}
-                          options={texts}
+                          options={[{ id: null, title: '全部文件' }, ...texts]}
                           getOptionLabel={(option) => option.title}
                           renderInput={(params) => (
                             <TextField
                               {...params}
                               label="选择文件"
                               size="small"
+                              sx={{
+                                '& .MuiInputBase-input': {
+                                  cursor: 'pointer'
+                                }
+                              }}
                             />
                           )}
                           isOptionEqualToValue={(option, value) => option.id === value.id}
+                          sx={{
+                            '& .MuiOutlinedInput-root': {
+                              cursor: 'pointer'
+                            }
+                          }}
                         />
                       </FormControl>
                     </Grid>
                     <Grid item xs={12} sm={4}>
                       <FormControl fullWidth size="small" disabled={!selectedTextId}>
                         <Autocomplete
-                          value={selectedChunkIndex !== null ? selectedTextChunks[selectedChunkIndex] : null}
+                          value={selectedChunkIndex === null ? 
+                            { content: '全部分块', start_index: -1, end_index: -1 } : 
+                            selectedTextChunks[selectedChunkIndex] || null}
                           onChange={(_, newValue) => {
-                            setSelectedChunkIndex(newValue ? selectedTextChunks.indexOf(newValue) : null);
+                            if (!newValue || newValue.start_index === -1) {
+                              setSelectedChunkIndex(null);
+                            } else {
+                              const index = selectedTextChunks.indexOf(newValue);
+                              setSelectedChunkIndex(index === -1 ? null : index);
+                            }
                             setPage(1);
                           }}
-                          options={selectedTextChunks}
-                          getOptionLabel={(option) => `分块 ${selectedTextChunks.indexOf(option) + 1} (${option.content.length} 字符)`}
+                          options={[{ content: '全部分块', start_index: -1, end_index: -1 }, ...selectedTextChunks]}
+                          getOptionLabel={(option) => {
+                            if (option.start_index === -1) return '全部分块';
+                            const index = selectedTextChunks.indexOf(option);
+                            return `分块 ${index + 1} (${option.content.length} 字符)`;
+                          }}
                           renderInput={(params) => (
                             <TextField
                               {...params}
                               label="选择分块"
                               size="small"
+                              sx={{
+                                '& .MuiInputBase-input': {
+                                  cursor: 'pointer'
+                                }
+                              }}
                             />
                           )}
-                          isOptionEqualToValue={(option, value) => option === value}
+                          isOptionEqualToValue={(option, value) => {
+                            if (!value) return option.start_index === -1;
+                            if (option.start_index === -1 && value.start_index === -1) return true;
+                            return option === value;
+                          }}
+                          sx={{
+                            '& .MuiOutlinedInput-root': {
+                              cursor: 'pointer'
+                            }
+                          }}
                         />
                       </FormControl>
                     </Grid>
@@ -2220,7 +2288,7 @@ export default function Project() {
             {state.loading ? '正在生成问题...' : '确定要为选中的分块生成问题吗？这可能需要一些时间。'}
           </Typography>
           <Typography color="text.secondary" sx={{ mt: 1 }}>
-            注意：问题生成过程无法打断，开始生成后点击关闭按钮，将在后台继续生成
+            注意！单个问题生成过程无法打断，开始生成后点击后台进行按钮，可以暂时隐藏弹窗在后台继续生成
           </Typography>
         </DialogContent>
         <DialogActions>
@@ -2434,7 +2502,7 @@ export default function Project() {
                   正在生成第 {state.generateProgress.current + 1} 个分块的问题，共 {state.generateProgress.total} 个
                 </Typography>
                 <Typography color="text.secondary" sx={{ mt: 1 }}>
-                  注意：开始批量生成后，点击取消按钮无法取消正在生成的分块，只能停止后续分块的生成
+                  注意！开始批量生成后，点击取消按钮无法取消正在生成的分块，只能停止后续分块的生成
                 </Typography>
               </Box>
             </>
@@ -2586,7 +2654,7 @@ export default function Project() {
                   正在生成第 {answerGenerateProgress.current + 1} 个问题的答案，共 {answerGenerateProgress.total} 个
                 </Typography>
                 <Typography color="text.secondary" sx={{ mt: 1 }}>
-                  注意：开始批量生成后，点击取消按钮无法取消正在生成的答案，只能停止后续答案的生成
+                  注意！开始批量生成后，点击取消按钮无法取消正在生成的答案，只能停止后续答案的生成
                 </Typography>
               </Box>
             </>
@@ -2752,6 +2820,138 @@ export default function Project() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenViewChunkContent(false)}>关闭</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 单个生成问题的进度弹窗 */}
+      <Dialog
+        open={singleGenerateProgress.isOpen}
+        maxWidth="sm"
+        fullWidth
+        onClose={() => {
+          if (singleGenerateProgress.status !== 'processing') {
+            setSingleGenerateProgress(prev => ({ ...prev, isOpen: false }));
+          }
+        }}
+      >
+        <DialogTitle>生成问题</DialogTitle>
+        <DialogContent>
+          {singleGenerateProgress.status === 'processing' && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mt: 2 }}>
+              <CircularProgress size={40} sx={{ mb: 2 }} />
+              <Typography>
+                正在生成问题，请稍候...
+              </Typography>
+              <Typography color="text.secondary" sx={{ mt: 1 }}>
+                注意！单个问题生成无法打断，请等待生成完成或后台进行
+              </Typography>
+            </Box>
+          )}
+          {singleGenerateProgress.status === 'error' && (
+            <Box sx={{ mt: 2 }}>
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {singleGenerateProgress.message}
+              </Alert>
+              <Typography>
+                问题生成失败，请检查报错信息后重试
+              </Typography>
+            </Box>
+          )}
+          {singleGenerateProgress.status === 'success' && (
+            <Box sx={{ mt: 2 }}>
+              <Alert severity="success" sx={{ mb: 2 }}>
+                {singleGenerateProgress.message}
+              </Alert>
+              <Typography>
+                问题生成完成
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          {singleGenerateProgress.status === 'processing' ? (
+            <Button
+              onClick={() => {
+                setSingleGenerateProgress(prev => ({ ...prev, isOpen: false }));
+              }}
+            >
+              后台进行
+            </Button>
+          ) : (
+            <Button
+              onClick={() => {
+                setSingleGenerateProgress(prev => ({ ...prev, isOpen: false }));
+              }}
+            >
+              关闭
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
+
+      {/* 单个答案生成的进度弹窗 */}
+      <Dialog
+        open={singleAnswerGenerateProgress.isOpen}
+        maxWidth="sm"
+        fullWidth
+        onClose={() => {
+          if (singleAnswerGenerateProgress.status !== 'processing') {
+            setSingleAnswerGenerateProgress(prev => ({ ...prev, isOpen: false }));
+          }
+        }}
+      >
+        <DialogTitle>生成答案</DialogTitle>
+        <DialogContent>
+          {singleAnswerGenerateProgress.status === 'processing' && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mt: 2 }}>
+              <CircularProgress size={40} sx={{ mb: 2 }} />
+              <Typography>
+                正在生成答案，请稍候...
+              </Typography>
+              <Typography color="text.secondary" sx={{ mt: 1 }}>
+                注意！单个答案生成无法打断，请等待生成完成或后台进行
+              </Typography>
+            </Box>
+          )}
+          {singleAnswerGenerateProgress.status === 'error' && (
+            <Box sx={{ mt: 2 }}>
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {singleAnswerGenerateProgress.message}
+              </Alert>
+              <Typography>
+                答案生成失败，请检查报错信息后重试
+              </Typography>
+            </Box>
+          )}
+          {singleAnswerGenerateProgress.status === 'success' && (
+            <Box sx={{ mt: 2 }}>
+              <Alert severity="success" sx={{ mb: 2 }}>
+                {singleAnswerGenerateProgress.message}
+              </Alert>
+              <Typography>
+                答案生成完成
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          {singleAnswerGenerateProgress.status === 'processing' ? (
+            <Button
+              onClick={() => {
+                setSingleAnswerGenerateProgress(prev => ({ ...prev, isOpen: false }));
+              }}
+            >
+              后台进行
+            </Button>
+          ) : (
+            <Button
+              onClick={() => {
+                setSingleAnswerGenerateProgress(prev => ({ ...prev, isOpen: false }));
+              }}
+            >
+              关闭
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
     </Box>
