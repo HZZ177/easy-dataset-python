@@ -2419,13 +2419,24 @@ export default function Project() {
         <DialogContent>
           {state.generateProgress.status === 'processing' && (
             <>
-              <LinearProgress sx={{ mt: 1 }} />
-              <Typography>
-                正在生成第 {state.generateProgress.current + 1} 个分块的问题，共 {state.generateProgress.total} 个
-              </Typography>
-              <Typography color="text.secondary" sx={{ mt: 1 }}>
-                注意：开始批量生成后，点击取消按钮无法取消正在生成的分块，只能停止后续分块的生成
-              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mt: 2 }}>
+                <CircularProgress size={40} sx={{ mb: 2 }} />
+                <Typography variant="h6" sx={{ mb: 2 }}>
+                  {Math.round((state.generateProgress.current / state.generateProgress.total) * 100)}%
+                </Typography>
+                <Box sx={{ width: '100%', mb: 2 }}>
+                  <LinearProgress 
+                    variant="determinate" 
+                    value={(state.generateProgress.current / state.generateProgress.total) * 100} 
+                  />
+                </Box>
+                <Typography>
+                  正在生成第 {state.generateProgress.current + 1} 个分块的问题，共 {state.generateProgress.total} 个
+                </Typography>
+                <Typography color="text.secondary" sx={{ mt: 1 }}>
+                  注意：开始批量生成后，点击取消按钮无法取消正在生成的分块，只能停止后续分块的生成
+                </Typography>
+              </Box>
             </>
           )}
           {state.generateProgress.status === 'cancelling' && (
@@ -2560,13 +2571,24 @@ export default function Project() {
         <DialogContent>
           {answerGenerateProgress.status === 'processing' && (
             <>
-              <LinearProgress sx={{ mt: 1 }} />
-              <Typography>
-                正在生成第 {answerGenerateProgress.current + 1} 个问题的答案，共 {answerGenerateProgress.total} 个
-              </Typography>
-              <Typography color="text.secondary" sx={{ mt: 1 }}>
-                注意：开始批量生成后，点击取消按钮无法取消正在生成的答案，只能停止后续答案的生成
-              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mt: 2 }}>
+                <CircularProgress size={40} sx={{ mb: 2 }} />
+                <Typography variant="h6" sx={{ mb: 2 }}>
+                  {Math.round((answerGenerateProgress.current / answerGenerateProgress.total) * 100)}%
+                </Typography>
+                <Box sx={{ width: '100%', mb: 2 }}>
+                  <LinearProgress 
+                    variant="determinate" 
+                    value={(answerGenerateProgress.current / answerGenerateProgress.total) * 100} 
+                  />
+                </Box>
+                <Typography>
+                  正在生成第 {answerGenerateProgress.current + 1} 个问题的答案，共 {answerGenerateProgress.total} 个
+                </Typography>
+                <Typography color="text.secondary" sx={{ mt: 1 }}>
+                  注意：开始批量生成后，点击取消按钮无法取消正在生成的答案，只能停止后续答案的生成
+                </Typography>
+              </Box>
             </>
           )}
           {answerGenerateProgress.status === 'cancelling' && (
