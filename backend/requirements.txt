@@ -1,6 +1,6 @@
-fastapi == 0.115.9
-uvicorn == 0.34.0
-sqlalchemy == 2.0.40
-loguru == 0.7.3
-crewai == 0.108.0
-python-multipart == 0.0.20
+fastapi==0.115.9
+uvicorn==0.34.0
+sqlalchemy==2.0.40
+loguru==0.7.3
+crewai==0.108.0
+python-multipart==0.0.20
